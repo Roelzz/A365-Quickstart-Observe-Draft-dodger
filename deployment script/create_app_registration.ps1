@@ -43,7 +43,7 @@ $ErrorActionPreference = "Stop"
 
 # Resolve project paths
 $AgentFolder = (Get-Item "$PSScriptRoot\..").FullName
-$tenantConfigPath = Join-Path $AgentFolder "deployment script/demo-tenant.config.json"
+$tenantConfigPath = Join-Path $AgentFolder "demo-tenant.config.json"
 $tenantConfigExamplePath = Join-Path $AgentFolder "deployment script/demo-tenant.config.json.example"
 
 # Verify az CLI is signed in
