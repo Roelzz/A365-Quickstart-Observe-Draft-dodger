@@ -150,6 +150,9 @@ A365_Draft_Dodger/
 ├── tests/
 │   ├── test_main.py                   # pytest unit tests (token_cache, agent_interface)
 │   └── run_drafts.py                  # Live integration runner — 5 demo drafts
+├── plans/                             # Implementation plans (per phase)
+│   ├── phase-1-scaffold.md
+│   └── phase-2-registration-and-observability.md
 └── deployment script/                 # A365 + Teams deployment artefacts
     ├── deploy.ps1                     # ACA deployment (skipped if running via DevTunnel)
     ├── initialize_a365_config.ps1     # Generates a365.config.json
@@ -170,7 +173,7 @@ A365_Draft_Dodger/
 
 The agent runs locally on `:3978`, exposed via a persistent Microsoft DevTunnel. A365 registers the tunnel URL as the agent's messaging endpoint instead of an Azure Container App URL.
 
-Full step-by-step plan: see `~/.claude/plans/draft-dodger-phase-2.md`.
+Full step-by-step plan: see [`plans/phase-2-registration-and-observability.md`](plans/phase-2-registration-and-observability.md).
 
 ### Tunnel basics
 
@@ -208,7 +211,7 @@ The repo includes deps for OTLP and Azure Monitor exporters, and `agent.py` call
 
 Worse: the workaround for the Foundry Responses API bypasses `agent_framework.ChatAgent`. Even if the instrumentor were configured, it doesn't hook the raw `openai.AsyncOpenAI.responses.create` call we actually make.
 
-**Phase 2B** (see `~/.claude/plans/draft-dodger-phase-2.md`) wires this up properly: initialize Microsoft Agent 365 observability, add `opentelemetry-instrumentation-openai-v2` for the OpenAI SDK, and point the OTLP exporter at either an Aspire Dashboard (local demo) or an Application Insights resource (cloud).
+**Phase 2B** (see [`plans/phase-2-registration-and-observability.md`](plans/phase-2-registration-and-observability.md)) wires this up properly: initialize Microsoft Agent 365 observability, add `opentelemetry-instrumentation-openai-v2` for the OpenAI SDK, and point the OTLP exporter at either an Aspire Dashboard (local demo) or an Application Insights resource (cloud).
 
 ---
 
