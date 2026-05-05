@@ -28,6 +28,7 @@ dependencies = [
     "microsoft_agents_a365_notifications>=0.1.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
     "azure-monitor-opentelemetry-exporter>=1.0.0b39",
+    "opentelemetry-instrumentation-openai-v2>=2.4b0",
 ]
 
 [dependency-groups]

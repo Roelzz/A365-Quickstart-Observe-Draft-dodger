@@ -204,8 +204,10 @@ opentelemetry-api==1.41.1
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-openai-v2
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
+    #   opentelemetry-util-genai
 opentelemetry-exporter-otlp==1.41.1
     # via microsoft-agents-a365-observability-core
 opentelemetry-exporter-otlp-proto-common==1.41.1
@@ -219,7 +221,12 @@ opentelemetry-exporter-otlp-proto-grpc==1.41.1
 opentelemetry-exporter-otlp-proto-http==1.41.1
     # via opentelemetry-exporter-otlp
 opentelemetry-instrumentation==0.62b1
-    # via microsoft-agents-a365-observability-extensions-agent-framework
+    # via
+    #   microsoft-agents-a365-observability-extensions-agent-framework
+    #   opentelemetry-instrumentation-openai-v2
+    #   opentelemetry-util-genai
+opentelemetry-instrumentation-openai-v2==2.4b0
+    # via draft-dodger
 opentelemetry-proto==1.41.1
     # via
     #   opentelemetry-exporter-otlp-proto-common
@@ -237,10 +244,14 @@ opentelemetry-sdk==1.41.1
 opentelemetry-semantic-conventions==0.62b1
     # via
     #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-openai-v2
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions-ai
+    #   opentelemetry-util-genai
 opentelemetry-semantic-conventions-ai==0.5.1
     # via agent-framework-core
+opentelemetry-util-genai==0.4b0
+    # via opentelemetry-instrumentation-openai-v2
 packaging==26.2
     # via
     #   agent-framework-core

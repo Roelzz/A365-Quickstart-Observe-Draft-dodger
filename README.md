@@ -205,13 +205,50 @@ If a verdict doesn't appear within ~5 seconds:
 
 ---
 
-## Observability (currently NOT working)
+## Observability
 
-The repo includes deps for OTLP and Azure Monitor exporters, and `agent.py` calls `AgentFrameworkInstrumentor().instrument()`, **but it warns `"Microsoft Agent 365 (or your telemetry config) is not initialized"` on every run**. No traces are emitted.
+Wired up in `observability.py` and called from `agent.py` at import time. Each call to `process_user_message` emits a single OpenTelemetry span named `draft_dodger.analyse` with `gen_ai.*` semantic attributes:
 
-Worse: the workaround for the Foundry Responses API bypasses `agent_framework.ChatAgent`. Even if the instrumentor were configured, it doesn't hook the raw `openai.AsyncOpenAI.responses.create` call we actually make.
+| Attribute | Value |
+|---|---|
+| `service.name` | `draft-dodger` |
+| `service.namespace` | `a365.demo` |
+| `gen_ai.system` | `azure_openai` |
+| `gen_ai.operation.name` | `responses` |
+| `gen_ai.request.model` | the deployment name (e.g. `gpt-5.4-nano`) |
+| `gen_ai.request.input.length` | character count of the user draft |
+| `gen_ai.usage.input_tokens` | from the Responses API response |
+| `gen_ai.usage.output_tokens` | from the Responses API response |
+| `gen_ai.response.output.length` | character count of the agent reply |
 
-**Phase 2B** (see [`plans/phase-2-registration-and-observability.md`](plans/phase-2-registration-and-observability.md)) wires this up properly: initialize Microsoft Agent 365 observability, add `opentelemetry-instrumentation-openai-v2` for the OpenAI SDK, and point the OTLP exporter at either an Aspire Dashboard (local demo) or an Application Insights resource (cloud).
+### Where the spans go
+
+By default (no OTLP endpoint, no App Insights connection string) the Microsoft Agent 365 SDK falls back to a **console exporter** — spans are pretty-printed to stdout. Useful for local dev.
+
+To export elsewhere, set one of:
+
+```bash
+# Local OTLP collector (Aspire Dashboard, Jaeger, otelcol, etc.)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+# Cloud (Azure Monitor / App Insights)
+APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
+```
+
+### Note on `OpenAIInstrumentor`
+
+`opentelemetry-instrumentation-openai-v2` is installed and enabled, but as of `2.4b0` it only wraps `openai.resources.chat.completions` — not the Responses API. Once it adds Responses-API support, our manual span in `process_user_message` becomes redundant and can be deleted. Until then, the manual span is what produces traces.
+
+### Aspire Dashboard (local)
+
+If you want a UI, run an Aspire Dashboard with Docker:
+
+```bash
+docker run --rm -it -p 18888:18888 -p 4317:18889 \
+  mcr.microsoft.com/dotnet/aspire-dashboard:latest
+```
+
+Then add `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` to `.env` and open http://localhost:18888.
 
 ---
 
