@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Demo tenant configuration for Agent 365 deployment scripts",
+  "tenantId": "<YOUR_TENANT_ID>",
+  "tenantName": "<YOUR_TENANT_NAME>",
+  "adminUserPrincipalName": "<ADMIN_UPN>@<DOMAIN>.onmicrosoft.com",
+  "subscriptionId": "<YOUR_AZURE_SUBSCRIPTION_ID>",
+  "subscriptionName": "<YOUR_SUBSCRIPTION_NAME>",
+  "customClientAppId": "<YOUR_CUSTOM_CLIENT_APP_ID>",
+  "location": "westeurope",
+  "notes": "Copy to demo-tenant.config.json and fill in values. Do not commit the filled-in version."
+}

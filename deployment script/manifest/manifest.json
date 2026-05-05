@@ -1,0 +1,42 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/vdevPreview/MicrosoftTeams.schema.json",
+  "id": "<BLUEPRINT_ID>",
+  "name": {
+    "short": "Draft Dodger",
+    "full": "Draft Dodger"
+  },
+  "description": {
+    "short": "Email risk advisor that protects you from professional regret",
+    "full": "Analyses draft emails before you send them. Scores passive aggression, emotional temperature, and formality match; flags risky phrases with rewrites; gives a verdict — SEND, TONE DOWN, or DELETE AND WALK AWAY — with a confidence score."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#2ECC71",
+  "version": "1.0.0",
+  "manifestVersion": "devPreview",
+  "developer": {
+    "name": "Microsoft Corporation",
+    "mpnId": "",
+    "websiteUrl": "https://go.microsoft.com/fwlink/?LinkId=518028",
+    "privacyUrl": "https://go.microsoft.com/fwlink/?LinkId=518028",
+    "termsOfUseUrl": "https://shares.datatransfer.microsoft.com/assets/Microsoft_Terms_of_Use.html"
+  },
+  "bots": [
+    {
+      "botId": "<BLUEPRINT_ID>",
+      "scopes": [
+        "personal"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false
+    }
+  ],
+  "agenticUserTemplates": [
+    {
+      "id": "<AGENTIC_TEMPLATE_ID>",
+      "file": "agenticUserTemplateManifest.json"
+    }
+  ]
+}

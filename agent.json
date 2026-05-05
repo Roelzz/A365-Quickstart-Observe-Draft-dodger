@@ -1,0 +1,8 @@
+{
+  "name": "Draft Dodger",
+  "type": "agentic",
+  "language": "python",
+  "deployment": "container-apps",
+  "port": 3978,
+  "devTunnelId": "a365-draft-dodger"
+}

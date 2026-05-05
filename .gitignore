@@ -1,0 +1,45 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment file with secrets
+.env
+.env.*backup*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Logs
+*.log
+logs/
+
+# Local config (contains secrets)
+*.local.json
+
+# Deployment artifacts (contain tenant-specific values)
+deployment.json
+a365.config.json
+a365.generated.config.json
+demo-tenant.config.json
+
+# Manifest build output
+deployment script/manifest/*.zip
+
+# MOS token
+/tmp/mos_token.txt
