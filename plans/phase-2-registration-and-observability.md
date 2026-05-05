@@ -33,42 +33,40 @@ Tenant config required (collect from user before starting):
 
 ### Steps
 
-1. **Create persistent DevTunnel.**
+1. **Create persistent DevTunnel.** ✅ **DONE.**
+   - Tunnel ID: `a365-draft-dodger.euw`
+   - Public URL: `https://a365-draft-dodger-3978.euw.devtunnels.ms`
+   - Anonymous connect access enabled. 30-day rolling expiration (refreshes on use).
+   - To re-host: `devtunnel host a365-draft-dodger`.
+
+2. **Run the app registration script** (creates the customClientAppId Phase 2A needs):
    ```bash
-   devtunnel login                                          # device code, sign in with admin
-   devtunnel create a365-draft-dodger -a                    # -a = allow anonymous (Teams needs this)
-   devtunnel port create a365-draft-dodger -p 3978
-   devtunnel show a365-draft-dodger                         # capture the persistent URL
+   pwsh -File "deployment script/create_app_registration.ps1"
    ```
-   The URL has form `https://<tunnel-id>-3978.<region>.devtunnels.ms`. Capture it as `<TUNNEL_URL>`.
+   This creates an Entra app registration "A365 Draft Dodger Client", configures Microsoft Graph User.Read + Agent 365 service-connection scope, generates a 1-year client secret, runs admin consent, and writes the values into `deployment script/demo-tenant.config.json` (auto-fills tenantId, subscriptionId, adminUPN from `az account show`). **Capture the printed `clientSecret` — it's only shown once.**
 
-2. **Fill in `deployment script/demo-tenant.config.json`** from the `.example` template with the tenant config above.
-
-3. **Skip `deploy.ps1` entirely.** Instead, hand-create `deployment.json` at the project root so `initialize_a365_config.ps1` thinks the agent is already deployed:
+3. **Skip `deploy.ps1` entirely.** Copy `deployment script/deployment.json.example` to `deployment.json` at the project root. The example already points at the dev tunnel URL. Schema (confirmed from `initialize_a365_config.ps1`):
    ```json
    {
-     "agentName": "draft-dodger",
-     "agentEndpoint": "<TUNNEL_URL>",
-     "containerAppName": "local-via-devtunnel",
-     "resourceGroup": "n/a",
-     "imageTag": "n/a"
+     "endpoint": "https://a365-draft-dodger-3978.euw.devtunnels.ms/api/messages",
+     "resourceGroup": "n/a-using-devtunnel"
    }
    ```
-   Verify the actual key names by reading `deploy.ps1`'s output — adjust if the real schema differs.
+   `initialize_a365_config.ps1` reads only `endpoint` and `resourceGroup`.
 
 4. **Run A365 config init.**
    ```bash
    cd "deployment script"
    pwsh -File initialize_a365_config.ps1 -Force
    ```
-   This reads `demo-tenant.config.json` + the fake `deployment.json` and writes `a365.config.json` at the project root.
+   Reads `demo-tenant.config.json` (created in step 2) + `deployment.json` (created in step 3) and writes `a365.config.json` at the project root with `needDeployment=false`.
 
-5. **Run `a365 setup all`.**
+5. **Run `a365 setup all --skip-infrastructure`.**
    ```bash
    cd /Users/roelschenk/Downloads/Projects/A365_Draft_Dodger
-   a365 setup all
+   a365 setup all --skip-infrastructure --verbose
    ```
-   Device-code prompt — sign in with admin. This creates the blueprint, the service connection, and writes `a365.generated.config.json`.
+   `--skip-infrastructure` is correct because `needDeployment=false` (we're using DevTunnel, no Container App). Device-code prompt — sign in with admin. Creates the blueprint, the service connection, and writes `a365.generated.config.json`.
 
 6. **Extract blueprint ID and update `.env`.**
    ```bash
@@ -118,6 +116,12 @@ Tenant config required (collect from user before starting):
 - If the agent endpoint check in the A365 backend probes the tunnel URL and finds it down, registration may fail. **Mitigation**: have `devtunnel host` running and the local agent up *before* running `a365 setup all`.
 
 ## Phase 2B — Observability
+
+✅ **DONE.** Committed in `e669e74`. Each `process_user_message` now emits an OTel span `draft_dodger.analyse` with `gen_ai.*` semantic attributes (model, input/output token counts, response length, request/response sizes). When `OTEL_EXPORTER_OTLP_ENDPOINT` and `APPLICATIONINSIGHTS_CONNECTION_STRING` are both unset, the SDK falls back to a console exporter and pretty-prints spans to stdout. See README "Observability" section.
+
+The original plan (below) is kept for reference; `setup_observability(...)` in the original draft was actually `configure(...)` in the installed package, and `OpenAIInstrumentor` only wraps `chat.completions` not `responses` — so we wrap the call in a manual span instead.
+
+---
 
 Goal: traces from every Draft Dodger turn flow into either Aspire Dashboard (local) or Application Insights (cloud), including the actual OpenAI Responses API call latency, prompt, and token counts.
 
