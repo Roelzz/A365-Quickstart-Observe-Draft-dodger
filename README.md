@@ -492,9 +492,18 @@ The A365 first-party exporter requires an agentic-user token for scope `Agent365
 
 `a365 setup all` already stamps `ENABLE_A365_OBSERVABILITY_EXPORTER=false` plus the `AGENT365OBSERVABILITY__*` agent-identity values into `.env` — flip the flag to `true` to enable the native path. App Insights via `APPLICATIONINSIGHTS_CONNECTION_STRING` is in the deps but not wired in this build (the A365 SDK doesn't take an AppInsights option directly; needs a separate `AzureMonitorTraceExporter` on the tracer provider).
 
-> ⚠️ **Known gotcha (CLI 1.1.174):** the `oauth2PermissionGrant` that `a365 setup blueprint` creates for `Agent365.Observability.OtelWrite` ships with a **leading space** in the `scope` field. The agentic-user `user_fic` token-exchange flow does strict scope matching and rejects this with `AADSTS65001 — user has not consented`, so spans never export despite `ENABLE_A365_OBSERVABILITY_EXPORTER=true`. Fix: PATCH the grant to remove the leading space. Full diagnosis + the exact `az rest` command in [`LESSONS_LEARNED.md` §13](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing).
+> ⚠️ **Known gotchas (4 stacked bugs that mask each other):** getting native A365 observability working required four fixes — see [`LESSONS_LEARNED.md` §13](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing) and [§14](LESSONS_LEARNED.md#14-native-a365-observability--the-full-bug-stack-not-just-the-consent-grant) for full diagnosis:
 >
-> To diagnose live: set `OBSERVABILITY_DEBUG=true` in `.env` and restart the agent. `observability.py` raises the log level on `microsoft_agents_a365.observability` and `microsoft_agents.authentication.msal` so per-export HTTP attempts and per-turn token-exchange errors become visible.
+> 1. **Bug 1 (CLI 1.1.174):** the `oauth2PermissionGrant` for OtelWrite ships with a leading space — `user_fic` token exchange fails with `AADSTS65001`. PATCH the grant via Graph.
+> 2. **Bug 2 (SDK filter):** `gen_ai.operation.name = "responses"` is rejected by the exporter's allowlist (`{chat, invoke_agent, execute_tool, output_messages}`). Set it to `"chat"`.
+> 3. **Bug 3 (SDK type-hint lies):** `Agent365ExporterOptions.token_resolver` is hinted as `Awaitable` but called synchronously. Use plain `def`, not `async def` — otherwise the bearer becomes `<coroutine object …>` and the server returns `HTTP 400 EndpointInvalid: Tenant id  is invalid.`
+> 4. **Bug 4 (logging):** the exporter's success path logs at DEBUG only. `logging.basicConfig(level=INFO)` swallows it. Set `OBSERVABILITY_DEBUG=true` to see HTTP-level export logs (the helper in `observability.py` lowers root + handler + namespace logger levels).
+>
+> **Diagnostic mode:** set `OBSERVABILITY_DEBUG=true` in `.env`. The agent will then:
+>
+> - Log every per-export HTTP attempt at DEBUG (URL, status code, response body).
+> - Decode the agentic-user JWT once and log its `tid`/`aud`/`scp` claims.
+> - Persist the OtelWrite token to `/tmp/otelwrite_token.json` so you can iterate the exporter offline via [`scripts/test_a365_export.py`](scripts/test_a365_export.py) — no Copilot turns needed (token good for ~1h).
 
 ### Note on `OpenAIInstrumentor`
 

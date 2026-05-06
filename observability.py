@@ -39,9 +39,11 @@ from microsoft_agents_a365.observability.core import (
     Agent365ExporterOptions,
     SpectraExporterOptions,
     configure,
+    get_tracer_provider,
     is_configured,
 )
 from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 
 from token_cache import get_cached_agentic_token
 
@@ -64,14 +66,52 @@ def _enable_a365_exporter_debug_logging() -> None:
             "microsoft_agents.authentication.msal",
         ):
             logging.getLogger(name).setLevel(logging.DEBUG)
+        # `logging.basicConfig(level=INFO)` (in agent.py) sets the *root logger*
+        # AND the *root handler* threshold to INFO, both of which can drop DEBUG
+        # records even when a child logger is set to DEBUG. Lower both levels so
+        # DEBUG records actually reach stdout.
+        logging.getLogger().setLevel(logging.DEBUG)
+        for h in logging.getLogger().handlers:
+            h.setLevel(logging.DEBUG)
         logger.info(
             "OBSERVABILITY_DEBUG=true — DEBUG logging enabled on A365 exporter "
             "and MSAL auth (expect verbose per-export and per-token-exchange logs)"
         )
 
 
-async def _agentic_user_token_resolver(agent_id: str, tenant_id: str) -> Optional[str]:
-    """Async token resolver for A365 first-party telemetry.
+def _attach_console_span_mirror() -> None:
+    """When `OBSERVABILITY_DEBUG=true`, attach an extra `SimpleSpanProcessor` +
+    `ConsoleSpanExporter` to the active tracer provider so every span is also
+    pretty-printed to stdout the moment its `with` block ends — independently
+    of whether the configured A365 exporter succeeds or fails.
+
+    Use only as a diagnostic. Adds noise; do not enable in production demos.
+    """
+    if os.getenv("OBSERVABILITY_DEBUG", "false").lower() != "true":
+        return
+    try:
+        provider = get_tracer_provider()
+        if provider is None or not hasattr(provider, "add_span_processor"):
+            logger.warning("Cannot mirror spans to console — tracer provider has no add_span_processor")
+            return
+        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        logger.info("OBSERVABILITY_DEBUG mirror: ConsoleSpanExporter attached — every span will also print to stdout")
+    except Exception as e:
+        logger.warning("Failed to attach console span mirror: %s", e)
+
+
+def _agentic_user_token_resolver(agent_id: str, tenant_id: str) -> Optional[str]:
+    """Synchronous token resolver for A365 first-party telemetry.
+
+    ⚠️ Despite `Agent365ExporterOptions.token_resolver`'s type hint claiming
+    `Callable[[str, str], Awaitable[Optional[str]]]`, the SDK's actual call
+    site at `microsoft_agents_a365/observability/core/exporters/agent365_exporter.py:129`
+    is `token = self._token_resolver(agent_id, tenant_id)` — *without `await`*.
+    Making this `async def` produces a coroutine object that gets stringified
+    into the bearer header (`Authorization: Bearer <coroutine object …>`), and
+    the A365 ingest endpoint then rejects every export with HTTP 400
+    `EndpointInvalid: Tenant id  is invalid` (its downstream rendering of
+    "your token is unparseable"). Keep this sync.
 
     The Microsoft Agent 365 observability SDK calls this on every export
     attempt with `(agent_id, tenant_id)`. We read the agentic-user token
@@ -85,13 +125,50 @@ async def _agentic_user_token_resolver(agent_id: str, tenant_id: str) -> Optiona
     """
     token = get_cached_agentic_token(tenant_id, agent_id)
     if not token:
-        logger.debug(
-            "No cached agentic-user token for agent=%s tenant=%s — "
-            "first turn will populate the cache",
+        logger.warning(
+            "No cached agentic-user token for agent=%s tenant=%s — span will export without bearer",
             agent_id,
             tenant_id,
         )
+        return None
+
+    if os.getenv("OBSERVABILITY_DEBUG", "false").lower() == "true":
+        # One-time-per-process diagnostic: decode the JWT (no signature check) to expose
+        # the `tid` and `aud` claims, AND persist the token to /tmp so a standalone
+        # test script can iterate the exporter without needing further Copilot turns.
+        global _claims_logged
+        try:
+            _claims_logged
+        except NameError:
+            _claims_logged = False
+        if not _claims_logged:
+            try:
+                import base64, json as _json
+                payload_b64 = token.split(".")[1]
+                payload_b64 += "=" * (-len(payload_b64) % 4)
+                claims = _json.loads(base64.urlsafe_b64decode(payload_b64))
+                interesting = {k: claims.get(k) for k in ("tid", "aud", "iss", "appid", "sub", "scp", "roles", "agent_id", "agentic_user_id", "exp")}
+                logger.warning("OBSERVABILITY_DEBUG: agentic-user JWT claims = %s", interesting)
+                # Persist token + identity for offline iteration
+                with open("/tmp/otelwrite_token.json", "w") as f:
+                    _json.dump(
+                        {
+                            "token": token,
+                            "agent_id": agent_id,
+                            "tenant_id": tenant_id,
+                            "claims": interesting,
+                        },
+                        f,
+                    )
+                logger.warning("OBSERVABILITY_DEBUG: token persisted to /tmp/otelwrite_token.json (valid until exp=%s)", interesting.get("exp"))
+            except Exception as e:
+                logger.warning("OBSERVABILITY_DEBUG: failed to decode JWT for inspection: %s", e)
+            _claims_logged = True
+
     return token
+
+
+_claims_logged = False  # one-shot guard
 
 
 def init_observability(
@@ -161,6 +238,8 @@ def init_observability(
         logger.info("OpenAI SDK auto-instrumentation enabled (covers chat.completions only — Responses API uses manual span)")
     except Exception as e:
         logger.warning("OpenAI instrumentor failed: %s", e)
+
+    _attach_console_span_mirror()
 
     _initialized = True
     return True

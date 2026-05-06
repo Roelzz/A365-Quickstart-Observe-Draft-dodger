@@ -268,7 +268,80 @@ If your test user can't find it: check the M365 admin center → Agents → your
 
 ---
 
-## 14. Demo-day operations
+## 14. Native A365 observability — the *full* bug stack (not just the consent grant)
+
+§13 is one of **four** stacked bugs that all need to be fixed before native A365 observability actually works. They mask each other: the agent looks correct because chat replies still work, the agent log shows no errors at default log level, and the M365 admin center "Activity" tab is silent regardless. You only get spans landing at the A365 ingest endpoint when all four are solved.
+
+### Bug 1 — `oauth2PermissionGrant.scope` has a leading space
+See [§13](#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing). PATCH it via Graph.
+
+### Bug 2 — `gen_ai.operation.name` must be in `{chat, invoke_agent, execute_tool, output_messages}`
+
+The Agent 365 exporter at `microsoft_agents_a365/observability/core/exporters/utils.py:filter_and_partition_by_identity` drops every span whose `gen_ai.operation.name` isn't in:
+```python
+GEN_AI_OPERATION_NAMES = frozenset({
+    INVOKE_AGENT_OPERATION_NAME,
+    EXECUTE_TOOL_OPERATION_NAME,
+    OUTPUT_MESSAGES_OPERATION_NAME,
+    CHAT_OPERATION_NAME,            # "chat"
+    InferenceOperationType.CHAT.value,  # also "chat"
+})
+```
+- **Symptom:** the exporter logs `[Agent365Exporter] N spans without an eligible gen_ai.operation.name filtered out` (DEBUG only) and `No eligible genAI spans to export; nothing exported.` (INFO). At default log level you see neither — **silent drop**.
+- **The trap:** the OTel GenAI semantic conventions allow `gen_ai.operation.name = "responses"` for the OpenAI Responses API. The A365 SDK's allowlist *doesn't include it* (despite Foundry returning Responses-shaped output). Setting `"responses"` is the spec-correct choice; setting `"chat"` is the SDK-correct choice. They conflict.
+- **Fix:** in `agent.py`'s manual span, set `span.set_attribute("gen_ai.operation.name", "chat")` even when calling the Responses API.
+
+### Bug 3 — `Agent365ExporterOptions.token_resolver` must be **synchronous**
+
+The SDK's type hint claims:
+```python
+token_resolver: Optional[Callable[[str, str], Awaitable[Optional[str]]]] = None
+```
+…but the call site at `microsoft_agents_a365/observability/core/exporters/agent365_exporter.py:129` is:
+```python
+token = self._token_resolver(agent_id, tenant_id)   # no await
+```
+- **Symptom:** if you write `async def my_resolver(...)`, the SDK calls it without awaiting, gets a coroutine object, and stringifies it directly into the bearer header: `Authorization: Bearer <coroutine object my_resolver at 0x…>`. The A365 ingest endpoint then returns:
+  ```
+  HTTP 400 — {"code":"EndpointInvalid","message":"Tenant id  is invalid.","innererror":{"code":"TenantIdInvalid"}}
+  ```
+  Note the **double space** in `"Tenant id  is"` — the server's f-string template has an empty value for the tenant it tried to extract from the malformed bearer.
+- **Misleading:** the error says "Tenant id is invalid" — sends you down a `tid`-claim debugging rabbit hole. The token's claims are fine; the bearer string itself is the problem.
+- **Fix:** `def my_resolver(...) -> Optional[str]:` (sync). Trust the call site, ignore the type hint.
+
+### Bug 4 — `OBSERVABILITY_DEBUG` needs to lower **both** the namespace logger AND the root logger/handler
+
+The exporter's success path logs only at DEBUG (URL, token resolved, chunk send, HTTP status). With `logging.basicConfig(level=INFO)` (which `agent.py` calls at module load), the root logger AND its handlers are pinned to INFO and silently drop DEBUG records — even if a child namespace logger is set to DEBUG.
+- **Fix in `observability.py:_enable_a365_exporter_debug_logging`:**
+  ```python
+  logging.getLogger().setLevel(logging.DEBUG)         # root logger
+  for h in logging.getLogger().handlers:
+      h.setLevel(logging.DEBUG)                        # root handlers
+  for name in ("microsoft_agents_a365.observability",
+               "microsoft_agents.authentication.msal"):
+      logging.getLogger(name).setLevel(logging.DEBUG)
+  ```
+- Without this, a successful export looks identical to a silent drop in the agent log: zero output either way. Failures *do* log at ERROR so they're visible — but the absence of DEBUG output makes "did the export actually fire" ambiguous.
+
+### How to test the exporter in isolation (no Copilot turns)
+
+`scripts/test_a365_export.py` lets you iterate on the export path without sending Copilot messages each time. It loads a real OtelWrite token from `/tmp/otelwrite_token.json` (which `observability.py` persists the first time the resolver is called, gated by `OBSERVABILITY_DEBUG=true`) and posts a synthetic span directly to the A365 ingest endpoint. Token is valid for ~1 hour.
+
+```bash
+# Start agent with OBSERVABILITY_DEBUG=true, send ONE Copilot turn to populate the token cache,
+# then iterate freely:
+uv run python scripts/test_a365_export.py
+```
+
+Successful export looks like:
+```
+DEBUG: ... HTTP/1.1 200 OK
+DEBUG: HTTP 200 success on attempt 1. Response: {"partialSuccess":{"rejectedSpans":0,"errorMessage":""}}
+```
+
+---
+
+## 15. Demo-day operations
 
 - **The agent's stdout is your demo's best evidence.** Every M365 Copilot turn produces:
   - `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...` — proves the HTTP request landed
@@ -313,3 +386,6 @@ If your test user can't find it: check the M365 admin center → Agents → your
 | `setup_observability` import fails | §12 | The function is named `configure(...)`. |
 | `AADSTS65001 — user or administrator has not consented` on every Copilot turn (with `ENABLE_A365_OBSERVABILITY_EXPORTER=true`) | §13 | The `oauth2PermissionGrant` for OtelWrite has a leading space in `scope`. PATCH it to remove the space. |
 | `AADSTS500113 — No reply address registered` when opening admin-consent URL | §13 | The agentic-user app has no redirect URIs and you can't safely add one. Fix the grant via Graph API instead. |
+| `[Agent365Exporter] N spans without an eligible gen_ai.operation.name filtered out` (or *no* exporter activity at all in the log despite `is_agent365_exporter_enabled()=True`) | §14 Bug 2 | Set `gen_ai.operation.name = "chat"` on the span, not `"responses"`. SDK allowlist excludes the Responses-API operation name. |
+| `HTTP 400 — {"code":"EndpointInvalid","message":"Tenant id  is invalid.","innererror":{"code":"TenantIdInvalid"}}` (note the double space in the message) | §14 Bug 3 | Your `token_resolver` is `async def`. SDK calls it without `await`, ships a coroutine repr as the bearer. Make it `def`. |
+| Spans seem to be created but no exporter logs at all in the agent log | §14 Bug 4 | `logging.basicConfig(level=INFO)` filters DEBUG everywhere. Set `OBSERVABILITY_DEBUG=true` and ensure `observability.py` lowers root + handlers + namespace levels. |
