@@ -361,7 +361,35 @@ INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...
         ...
 ```
 
-For pretty-printed spans or an Aspire Dashboard UI view of every turn, see [`SETUP.md` §13](SETUP.md#watch-live-inbound-traffic-during-a-demo).
+For pretty-printed spans or an Aspire Dashboard UI view of every turn, see [Aspire Dashboard](#aspire-dashboard-recommended-local-demo-surface) below.
+
+### Start the Aspire dashboard (live trace UI)
+
+```bash
+./scripts/aspire-up.sh
+```
+
+Auto-detects podman or docker, boots `mcr.microsoft.com/dotnet/aspire-dashboard:latest` with frontend auth disabled (no token prompt), and opens http://localhost:18888 on macOS. Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` in `.env` and restart the agent — every span flows in real time. Stop with `podman stop aspire-dashboard` (or `docker stop`). Full details in [Aspire Dashboard](#aspire-dashboard-recommended-local-demo-surface).
+
+### Query the Purview Audit log (Microsoft-cloud surface)
+
+```bash
+./scripts/query-audit.sh                            # default: agent GUID, last 1 day
+./scripts/query-audit.sh "Draft Dodger" 7           # 7-day search by display name
+./scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 3
+```
+
+First run prints a `https://login.microsoft.com/device` URL + code — sign in once. Every subsequent run reuses the persistent `pwsh + Connect-ExchangeOnline` background session: zero prompts until laptop sleep / `pkill -f eo_loop`. Output: row count, per-`RecordType` breakdown, the first 10 rows in a table, and a sample `AuditData` JSON. Latency is 30 min – 24 h after the turn.
+
+Full Purview portal walkthrough (UI fields → exact values, sample audit row) lives in [Microsoft Purview Audit log](#microsoft-purview-audit-log-canonical-microsoft-cloud-surface).
+
+### Fire synthetic spans without a live Copilot turn
+
+```bash
+uv run python scripts/test_a365_export.py
+```
+
+Loads the agentic-user OtelWrite token cached at `/tmp/otelwrite_token.json` (populated by the agent on its first real Copilot turn while `OBSERVABILITY_DEBUG=true`), wires the same A365 native exporter + Aspire OTLP mirror + console mirror as `agent.py`, then fires a synthetic `InvokeAgentScope → InferenceScope → OutputScope` triple through all three. Useful for iterating exporter changes without restarting Bot Framework, and for warming the Purview Audit log with fixed test conversations between live demos. Token is good for ~1 h; re-run a real Copilot turn to refresh.
 
 ### Prevent the laptop from sleeping mid-demo (macOS)
 
