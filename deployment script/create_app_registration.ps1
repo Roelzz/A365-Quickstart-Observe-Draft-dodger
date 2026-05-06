@@ -59,8 +59,17 @@ Write-Host "  Subscription: $($account.name) ($($account.id))" -ForegroundColor 
 
 # Audience IDs A365 needs (resourceAppId values)
 $msGraphAppId       = "00000003-0000-0000-c000-000000000000"   # Microsoft Graph
-$userReadScopeId    = "e1fe6dd8-ba31-4d61-89e7-88639da4683d"   # User.Read (delegated)
 $a365ResourceAppId  = "5a807f24-c9de-44ee-a3a7-329e88a00ffc"   # Agent 365 service connection scope
+
+# Microsoft Graph delegated permissions required by the a365 CLI
+$requiredGraphScopes = @(
+    "User.Read",
+    "Application.ReadWrite.All",
+    "AgentIdentityBlueprint.ReadWrite.All",
+    "AgentIdentityBlueprint.UpdateAuthProperties.All",
+    "DelegatedPermissionGrant.ReadWrite.All",
+    "Directory.Read.All"
+)
 
 # Look for existing app
 Write-Host ""
@@ -98,15 +107,59 @@ if (-not $sp -or $sp.Length -eq 0) {
 # Add API permissions
 Write-Host ""
 Write-Host "Configuring API permissions..." -ForegroundColor Cyan
-Write-Host "  Microsoft Graph: User.Read (delegated)" -ForegroundColor Gray
-az ad app permission add `
-    --id $appId `
-    --api $msGraphAppId `
-    --api-permissions "$userReadScopeId=Scope" `
-    --output none 2>$null
 
-Write-Host "  Agent 365 service connection: .default" -ForegroundColor Gray
-# Find the .default scope ID for the A365 resource
+# Look up Microsoft Graph SP and resolve scope names → IDs
+Write-Host "  Resolving Microsoft Graph delegated scope IDs..." -ForegroundColor Gray
+$graphSp = az ad sp show --id $msGraphAppId --output json | ConvertFrom-Json
+$graphScopeMap = @{}
+foreach ($scope in $graphSp.oauth2PermissionScopes) {
+    $graphScopeMap[$scope.value] = $scope.id
+}
+
+$missingScopes = @()
+foreach ($scopeName in $requiredGraphScopes) {
+    if ($graphScopeMap.ContainsKey($scopeName)) {
+        $scopeId = $graphScopeMap[$scopeName]
+        az ad app permission add `
+            --id $appId `
+            --api $msGraphAppId `
+            --api-permissions "$scopeId=Scope" `
+            --output none 2>$null
+        Write-Host "    + $scopeName ($scopeId)" -ForegroundColor Gray
+    } else {
+        $missingScopes += $scopeName
+        Write-Host "    ! $scopeName — NOT FOUND on Microsoft Graph SP" -ForegroundColor Yellow
+    }
+}
+
+if ($missingScopes.Count -gt 0) {
+    Write-Host "  WARNING: $($missingScopes.Count) permission(s) not found on Microsoft Graph: $($missingScopes -join ', ')" -ForegroundColor Yellow
+    Write-Host "  These may be on a different resource (e.g. Agent 365 first-party app)." -ForegroundColor Yellow
+    Write-Host "  Trying Agent 365 SP as fallback..." -ForegroundColor Yellow
+    $a365Sp = az ad sp show --id $a365ResourceAppId --output json 2>$null | ConvertFrom-Json
+    if ($a365Sp) {
+        $a365ScopeMap = @{}
+        foreach ($scope in $a365Sp.oauth2PermissionScopes) {
+            $a365ScopeMap[$scope.value] = $scope.id
+        }
+        foreach ($scopeName in $missingScopes) {
+            if ($a365ScopeMap.ContainsKey($scopeName)) {
+                $scopeId = $a365ScopeMap[$scopeName]
+                az ad app permission add `
+                    --id $appId `
+                    --api $a365ResourceAppId `
+                    --api-permissions "$scopeId=Scope" `
+                    --output none 2>$null
+                Write-Host "    + $scopeName (Agent 365 SP, $scopeId)" -ForegroundColor Gray
+            } else {
+                Write-Host "    ! $scopeName — also missing on Agent 365 SP. Add manually in Entra portal." -ForegroundColor Red
+            }
+        }
+    }
+}
+
+# Agent 365 service connection scope (for the agent runtime, separate from CLI perms)
+Write-Host "  Agent 365 service connection: .default / user_impersonation" -ForegroundColor Gray
 $a365Sp = az ad sp show --id $a365ResourceAppId --output json 2>$null | ConvertFrom-Json
 if ($a365Sp) {
     $defaultScope = $a365Sp.oauth2PermissionScopes | Where-Object { $_.value -eq "user_impersonation" -or $_.value -eq ".default" } | Select-Object -First 1
@@ -116,14 +169,8 @@ if ($a365Sp) {
             --api $a365ResourceAppId `
             --api-permissions "$($defaultScope.id)=Scope" `
             --output none 2>$null
-        Write-Host "    Added scope: $($defaultScope.value) ($($defaultScope.id))" -ForegroundColor Gray
-    } else {
-        Write-Host "    WARNING: Could not auto-discover a delegated scope on the A365 resource SP." -ForegroundColor Yellow
-        Write-Host "    Manually grant 'user_impersonation' or '.default' on $a365ResourceAppId in the Entra portal." -ForegroundColor Yellow
+        Write-Host "    + $($defaultScope.value) ($($defaultScope.id))" -ForegroundColor Gray
     }
-} else {
-    Write-Host "    WARNING: Agent 365 resource SP ($a365ResourceAppId) not found in this tenant." -ForegroundColor Yellow
-    Write-Host "    A365 must be provisioned in your tenant first." -ForegroundColor Yellow
 }
 
 # Admin consent
