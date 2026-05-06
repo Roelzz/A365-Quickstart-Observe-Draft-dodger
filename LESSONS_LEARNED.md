@@ -341,7 +341,52 @@ DEBUG: HTTP 200 success on attempt 1. Response: {"partialSuccess":{"rejectedSpan
 
 ---
 
-## 15. Demo-day operations
+## 15. Plain OTel spans get ingested but **don't render in the Activity UI** — must use the SDK's structured scopes
+
+After fixing the four bugs in §14, plain `_tracer.start_as_current_span("draft_dodger.analyse")` spans were posting to A365 with HTTP 200 + `rejectedSpans:0`. The agent log showed clean exports. **`admin.cloud.microsoft → Agents → <agent> → Activity` was still empty.**
+
+- **Why:** the Activity UI only renders spans that match a specific shape — instances of:
+  - `InvokeAgentScope` (the per-turn outer span)
+  - `InferenceScope` (the LLM call)
+  - `ExecuteToolScope` (tool calls)
+  - `OutputScope` (the agent's reply)
+
+  Each requires ~14 attributes (`microsoft.a365.agent.blueprint.id`, `gen_ai.agent.name`, `microsoft.agent.user.email`, `microsoft.channel.name`, `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `server.address`, `server.port`, `client.address`, `microsoft.tenant.id`, …). The MS docs spell out the full required-vs-optional list under "Validate for store publishing".
+- **Fix:** in `agent.py:process_user_message`, wrap the turn in `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)`. Inside that, wrap the LLM call in `InferenceScope.start(request, inference_details, agent_details)`. After the LLM call, emit one `OutputScope.start(request, Response(messages=output), agent_details)`. Build `AgentDetails`/`Request`/`UserDetails` from `TurnContext.activity` plus the `AGENT365OBSERVABILITY__*` env vars `a365 setup` stamps into `.env`.
+- **Result:** A365 ingest accepts a triple per turn (3 spans, ~4 KB), and they render as a session in the Activity UI within 1–3 minutes.
+- **Bonus:** plain `gen_ai.operation.name = "chat"` spans **also** ingest with 200 OK — they just don't surface in the UI. So a successful HTTP 200 is necessary but not sufficient.
+
+## 16. The two separate env-var gates — both must be set
+
+The A365 SDK has **two** env vars that gate **two different** stages of the pipeline. Setting only one looks like progress but breaks downstream silently:
+
+| Env var | What it gates | Where checked | Symptom when missing |
+|---|---|---|---|
+| `ENABLE_A365_OBSERVABILITY_EXPORTER` | Whether `configure()` installs `_Agent365Exporter` (vs falling back to `ConsoleSpanExporter`). | `microsoft_agents_a365.observability.core.exporters.utils:is_agent365_exporter_enabled()` | Logs `is_agent365_exporter_enabled() not enabled or token_resolver not set. Falling back to console exporter.` Spans go to stdout, never to A365 ingest. |
+| `ENABLE_A365_OBSERVABILITY` (or `ENABLE_OBSERVABILITY`) | Whether `OpenTelemetryScope._is_telemetry_enabled()` returns True. Without it, **none of the structured scopes (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `OutputScope`) actually create spans**. They short-circuit silently. | `microsoft_agents_a365.observability.core.opentelemetry_scope:_is_telemetry_enabled()` | No `Span started: …` log lines. The exporter has nothing to export — but DOESN'T log "No eligible genAI spans" because the queue is genuinely empty (vs filtered). Truly silent. |
+
+Set both. The .env file `a365 setup` stamps includes only `ENABLE_A365_OBSERVABILITY_EXPORTER=false`. You must also add:
+
+```bash
+ENABLE_A365_OBSERVABILITY=true
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
+```
+
+## 17. `Response.__init__()` takes `messages`, not `content`
+
+Trivial but lost ~10 minutes. The dataclass `microsoft_agents_a365.observability.core.models.response.Response`:
+
+```python
+@dataclass
+class Response:
+    messages: ResponseMessagesParam   # NOT `content`
+```
+
+`OutputScope.start(request, Response(messages=output_text), agent_details)` works. `Response(content=...)` raises `TypeError: Response.__init__() got an unexpected keyword argument 'content'`. The Microsoft Learn doc page uses `messages` correctly, but it's easy to type `content` from muscle memory of OpenAI APIs.
+
+---
+
+## 18. Demo-day operations
 
 - **The agent's stdout is your demo's best evidence.** Every M365 Copilot turn produces:
   - `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...` — proves the HTTP request landed
@@ -389,3 +434,6 @@ DEBUG: HTTP 200 success on attempt 1. Response: {"partialSuccess":{"rejectedSpan
 | `[Agent365Exporter] N spans without an eligible gen_ai.operation.name filtered out` (or *no* exporter activity at all in the log despite `is_agent365_exporter_enabled()=True`) | §14 Bug 2 | Set `gen_ai.operation.name = "chat"` on the span, not `"responses"`. SDK allowlist excludes the Responses-API operation name. |
 | `HTTP 400 — {"code":"EndpointInvalid","message":"Tenant id  is invalid.","innererror":{"code":"TenantIdInvalid"}}` (note the double space in the message) | §14 Bug 3 | Your `token_resolver` is `async def`. SDK calls it without `await`, ships a coroutine repr as the bearer. Make it `def`. |
 | Spans seem to be created but no exporter logs at all in the agent log | §14 Bug 4 | `logging.basicConfig(level=INFO)` filters DEBUG everywhere. Set `OBSERVABILITY_DEBUG=true` and ensure `observability.py` lowers root + handlers + namespace levels. |
+| Spans ingested with HTTP 200, but `admin.cloud.microsoft → Agents → <agent> → Activity` stays empty | §15 | Plain OTel spans don't render in the UI. Use `InvokeAgentScope` + `InferenceScope` + `OutputScope` from the A365 SDK. |
+| No `Span started: …` log lines, no exporter activity, no errors — completely silent | §16 | You set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` but forgot `ENABLE_A365_OBSERVABILITY=true`. The scopes' separate gate is unset. |
+| `TypeError: Response.__init__() got an unexpected keyword argument 'content'` | §17 | The kwarg is `messages`, not `content`. `Response(messages=output_text)`. |

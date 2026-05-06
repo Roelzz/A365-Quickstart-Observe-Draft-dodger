@@ -369,6 +369,7 @@ dependencies = [
     { name = "microsoft-agents-a365-notifications" },
     { name = "microsoft-agents-a365-observability-core" },
     { name = "microsoft-agents-a365-observability-extensions-agent-framework" },
+    { name = "microsoft-agents-a365-observability-hosting" },
     { name = "microsoft-agents-a365-runtime" },
     { name = "microsoft-agents-a365-tooling" },
     { name = "microsoft-agents-a365-tooling-extensions-agentframework" },
@@ -404,6 +405,7 @@ requires-dist = [
     { name = "microsoft-agents-a365-notifications", specifier = ">=0.1.0" },
     { name = "microsoft-agents-a365-observability-core", specifier = ">=0.1.0" },
     { name = "microsoft-agents-a365-observability-extensions-agent-framework", specifier = ">=0.1.0" },
+    { name = "microsoft-agents-a365-observability-hosting", specifier = ">=1.0.0" },
     { name = "microsoft-agents-a365-runtime", specifier = ">=0.1.0" },
     { name = "microsoft-agents-a365-tooling", specifier = ">=0.1.0" },
     { name = "microsoft-agents-a365-tooling-extensions-agentframework", specifier = ">=0.1.0" },
@@ -725,6 +727,19 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/13/fe40f8d6b0f158b7ca2b56dc394b2dbdb4ad367f5b4f53655c7eba123bad/microsoft_agents_a365_observability_extensions_agent_framework-1.0.0-py3-none-any.whl", hash = "sha256:26c6660102fbdffb2c38219060b3b589e6c3d907a63e11ce6f07931f5b671be0", size = 8880, upload-time = "2026-05-01T02:59:54.928Z" },
+]
+
+[[package]]
+name = "microsoft-agents-a365-observability-hosting"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "microsoft-agents-a365-observability-core" },
+    { name = "microsoft-agents-hosting-core" },
+    { name = "opentelemetry-api" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/26/73/1c5baa6988c74aad7b205c92335165e1993d679857e1c04ffae4785132e7/microsoft_agents_a365_observability_hosting-1.0.0-py3-none-any.whl", hash = "sha256:ef5f24e598c191c72a0e3d3f3159088f00e9e099d55a7321d90db45e89a3ecd9", size = 12347, upload-time = "2026-05-01T02:59:59.879Z" },
 ]
 
 [[package]]

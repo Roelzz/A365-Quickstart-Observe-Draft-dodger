@@ -29,6 +29,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
     "azure-monitor-opentelemetry-exporter>=1.0.0b39",
     "opentelemetry-instrumentation-openai-v2>=2.4b0",
+    "microsoft-agents-a365-observability-hosting>=1.0.0",
 ]
 
 [dependency-groups]

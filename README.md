@@ -492,12 +492,15 @@ The A365 first-party exporter requires an agentic-user token for scope `Agent365
 
 `a365 setup all` already stamps `ENABLE_A365_OBSERVABILITY_EXPORTER=false` plus the `AGENT365OBSERVABILITY__*` agent-identity values into `.env` — flip the flag to `true` to enable the native path. App Insights via `APPLICATIONINSIGHTS_CONNECTION_STRING` is in the deps but not wired in this build (the A365 SDK doesn't take an AppInsights option directly; needs a separate `AzureMonitorTraceExporter` on the tracer provider).
 
-> ⚠️ **Known gotchas (4 stacked bugs that mask each other):** getting native A365 observability working required four fixes — see [`LESSONS_LEARNED.md` §13](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing) and [§14](LESSONS_LEARNED.md#14-native-a365-observability--the-full-bug-stack-not-just-the-consent-grant) for full diagnosis:
+> ⚠️ **Getting native A365 observability working required SEVEN bug fixes that mask each other.** Full diagnosis in [`LESSONS_LEARNED.md` §13–§17](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing). Quick summary:
 >
-> 1. **Bug 1 (CLI 1.1.174):** the `oauth2PermissionGrant` for OtelWrite ships with a leading space — `user_fic` token exchange fails with `AADSTS65001`. PATCH the grant via Graph.
-> 2. **Bug 2 (SDK filter):** `gen_ai.operation.name = "responses"` is rejected by the exporter's allowlist (`{chat, invoke_agent, execute_tool, output_messages}`). Set it to `"chat"`.
-> 3. **Bug 3 (SDK type-hint lies):** `Agent365ExporterOptions.token_resolver` is hinted as `Awaitable` but called synchronously. Use plain `def`, not `async def` — otherwise the bearer becomes `<coroutine object …>` and the server returns `HTTP 400 EndpointInvalid: Tenant id  is invalid.`
-> 4. **Bug 4 (logging):** the exporter's success path logs at DEBUG only. `logging.basicConfig(level=INFO)` swallows it. Set `OBSERVABILITY_DEBUG=true` to see HTTP-level export logs (the helper in `observability.py` lowers root + handler + namespace logger levels).
+> 1. **Consent grant has a leading space** in `scope` — `user_fic` token exchange fails `AADSTS65001`. PATCH via Graph. (§13)
+> 2. **`gen_ai.operation.name` allowlist** — must be `"chat"`, not the spec-correct `"responses"`. SDK filters everything else out silently. (§14 Bug 2)
+> 3. **`token_resolver` must be sync `def`**, not `async def`. SDK type hint says `Awaitable` but call site doesn't `await`. Async resolver → bearer becomes `<coroutine …>` → server `HTTP 400 EndpointInvalid: Tenant id  is invalid` (note the double space). (§14 Bug 3)
+> 4. **Logging visibility** — set `OBSERVABILITY_DEBUG=true` AND lower root logger + every handler to DEBUG. Otherwise the exporter's success-path DEBUG logs are swallowed by `basicConfig(INFO)`. (§14 Bug 4)
+> 5. **Activity UI requires structured scopes**, not plain OTel spans. Wrap every turn in `InvokeAgentScope` + `InferenceScope` + `OutputScope` from the A365 SDK with the full ~14 required attributes each. Plain spans ingest at 200 OK but never render. (§15)
+> 6. **Two separate env-var gates** — `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (gates the exporter) AND `ENABLE_A365_OBSERVABILITY=true` (gates whether scopes create spans at all). Setting only the first looks like everything works but nothing exports. (§16)
+> 7. **`Response.__init__()`** takes `messages`, not `content`. (§17)
 >
 > **Diagnostic mode:** set `OBSERVABILITY_DEBUG=true` in `.env`. The agent will then:
 >
