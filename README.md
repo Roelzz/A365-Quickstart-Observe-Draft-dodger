@@ -492,6 +492,10 @@ The A365 first-party exporter requires an agentic-user token for scope `Agent365
 
 `a365 setup all` already stamps `ENABLE_A365_OBSERVABILITY_EXPORTER=false` plus the `AGENT365OBSERVABILITY__*` agent-identity values into `.env` — flip the flag to `true` to enable the native path. App Insights via `APPLICATIONINSIGHTS_CONNECTION_STRING` is in the deps but not wired in this build (the A365 SDK doesn't take an AppInsights option directly; needs a separate `AzureMonitorTraceExporter` on the tracer provider).
 
+> ⚠️ **Known gotcha (CLI 1.1.174):** the `oauth2PermissionGrant` that `a365 setup blueprint` creates for `Agent365.Observability.OtelWrite` ships with a **leading space** in the `scope` field. The agentic-user `user_fic` token-exchange flow does strict scope matching and rejects this with `AADSTS65001 — user has not consented`, so spans never export despite `ENABLE_A365_OBSERVABILITY_EXPORTER=true`. Fix: PATCH the grant to remove the leading space. Full diagnosis + the exact `az rest` command in [`LESSONS_LEARNED.md` §13](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing).
+>
+> To diagnose live: set `OBSERVABILITY_DEBUG=true` in `.env` and restart the agent. `observability.py` raises the log level on `microsoft_agents_a365.observability` and `microsoft_agents.authentication.msal` so per-export HTTP attempts and per-turn token-exchange errors become visible.
+
 ### Note on `OpenAIInstrumentor`
 
 `opentelemetry-instrumentation-openai-v2` is installed and enabled, but as of `2.4b0` it only wraps `openai.resources.chat.completions` — not the Responses API. Once it adds Responses-API support, our manual span in `process_user_message` becomes redundant and can be deleted. Until then, the manual span is what produces traces. Background in [`LESSONS_LEARNED.md` §11](LESSONS_LEARNED.md#11-openai-otel-auto-instrumentation-gap-responses-api).

@@ -227,7 +227,48 @@ If your test user can't find it: check the M365 admin center → Agents → your
 
 ---
 
-## 13. Demo-day operations
+## 13. AADSTS65001 on `Agent365.Observability.OtelWrite` despite a grant existing
+
+- **Symptom:** With `ENABLE_A365_OBSERVABILITY_EXPORTER=true`, every Copilot turn produces this in the agent log:
+  ```
+  Failed to acquire agentic user token for agent_app_instance_id <agentic-user>
+    and agentic_user_id <user>, {'error': 'invalid_grant',
+    'error_description': "AADSTS65001: The user or administrator has not consented
+    to use the application with ID '<agentic-user>' named '<agent name>'."}
+  ```
+  …yet `az rest GET /v1.0/oauth2PermissionGrants` shows a grant *does* exist for `clientId=<agentic-user>`, `resourceId=<A365 Observability SP>`, `scope=" Agent365.Observability.OtelWrite"`, `consentType=AllPrincipals`. So the grant is there, but the token exchange acts as if it isn't.
+- **Root cause:** The grant's `scope` field has a **leading space**: `" Agent365.Observability.OtelWrite"` instead of `"Agent365.Observability.OtelWrite"`. The Microsoft Agents SDK's agentic-user authentication uses `grant_type: user_fic` (custom federated-identity-credential flow at `microsoft_agents/authentication/msal/msal_auth.py:396`), which does **strict scope matching** against the persisted grant. Entra normally tolerates whitespace in the space-separated `scope` field, but the `user_fic` flow does not — it surfaces the mismatch as a missing-consent error.
+- **Where the leading space comes from:** `a365 setup blueprint` (verified on CLI 1.1.174) emits the inheritable-permission grant with a leading-space-then-scope-name when the grant has only one scope. Looks like a list-join defect.
+- **Fix:** PATCH the grant to remove the leading space. One REST call:
+  ```bash
+  # Look up the grant ID for your tenant
+  CLIENT_SP=$(az ad sp list --filter "appId eq '<your-agentic-user-app-id>'" --query '[0].id' -o tsv)
+  GRANT_ID=$(az rest --method GET \
+    --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?\$filter=clientId eq '$CLIENT_SP'" \
+    --query 'value[?contains(scope,`Agent365.Observability.OtelWrite`)].id | [0]' -o tsv)
+
+  az rest --method PATCH \
+    --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$GRANT_ID" \
+    --body '{"scope": "Agent365.Observability.OtelWrite"}' \
+    --headers "Content-Type=application/json"
+  ```
+  Restart the agent. The next Copilot turn should log `✅ Token exchange successful` without an upstream `Failed to acquire agentic user token` line.
+- **If PATCH doesn't take, delete + recreate cleanly:**
+  ```bash
+  az rest --method DELETE --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$GRANT_ID"
+  az rest --method POST --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants" \
+    --body "{\"clientId\":\"$CLIENT_SP\",\"resourceId\":\"<A365-Observability-SP-id>\",\"scope\":\"Agent365.Observability.OtelWrite\",\"consentType\":\"AllPrincipals\"}" \
+    --headers "Content-Type=application/json"
+  ```
+- **Why the obvious workarounds fail:**
+  - `https://login.microsoftonline.com/<tenant>/v2.0/adminconsent?client_id=<agentic-user>&...` returns **AADSTS500113 — No reply address registered for the application** because the agentic-user app is auto-provisioned by A365 with no redirect URIs. Do not try to add one — modifying the auto-managed app is risky.
+  - The M365 admin center → Agents → &lt;agent&gt; → **Permissions** tab does not surface this consent (at least not in the build we tested) — there's nothing actionable there for the OtelWrite scope.
+- **Why it matters:** Without this fix, **native A365 observability silently no-ops on every Copilot turn**. Spans are created locally (the `draft_dodger.analyse` span is built fine) but never reach `https://agent365.svc.cloud.microsoft/observability/tenants/.../otlp/agents/.../traces` because the exporter has no bearer token to attach. There is no UI complaint; the Activity tab just stays empty.
+- **Diagnostic flag in this repo:** Set `OBSERVABILITY_DEBUG=true` in `.env` and restart the agent. `observability.py:_enable_a365_exporter_debug_logging` will raise the log level on `microsoft_agents_a365.observability` and `microsoft_agents.authentication.msal` so the `AADSTS65001` and the per-export HTTP attempts become visible in the agent log.
+
+---
+
+## 14. Demo-day operations
 
 - **The agent's stdout is your demo's best evidence.** Every M365 Copilot turn produces:
   - `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...` — proves the HTTP request landed
@@ -270,3 +311,5 @@ If your test user can't find it: check the M365 admin center → Agents → your
 | `ERROR: demo-tenant.config.json not found` | §9.1 | The actual file lives at project root, not under `deployment script/`. |
 | No spans appearing despite `OpenAIInstrumentor().instrument()` | §11 | Auto-instrumentor doesn't cover Responses API. Use a manual span. |
 | `setup_observability` import fails | §12 | The function is named `configure(...)`. |
+| `AADSTS65001 — user or administrator has not consented` on every Copilot turn (with `ENABLE_A365_OBSERVABILITY_EXPORTER=true`) | §13 | The `oauth2PermissionGrant` for OtelWrite has a leading space in `scope`. PATCH it to remove the space. |
+| `AADSTS500113 — No reply address registered` when opening admin-consent URL | §13 | The agentic-user app has no redirect URIs and you can't safely add one. Fix the grant via Graph API instead. |

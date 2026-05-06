@@ -50,6 +50,26 @@ logger = logging.getLogger(__name__)
 _initialized = False
 
 
+def _enable_a365_exporter_debug_logging() -> None:
+    """When `OBSERVABILITY_DEBUG=true`, raise the A365 exporter's log level so
+    its per-export HTTP activity (POST URL, status codes, retry attempts) is
+    visible in the agent log. Useful for diagnosing token/consent issues, 401s
+    from the ingest endpoint, and silent batch drops.
+
+    The relevant logger is `microsoft_agents_a365.observability.core.exporters.agent365_exporter`.
+    """
+    if os.getenv("OBSERVABILITY_DEBUG", "false").lower() == "true":
+        for name in (
+            "microsoft_agents_a365.observability",
+            "microsoft_agents.authentication.msal",
+        ):
+            logging.getLogger(name).setLevel(logging.DEBUG)
+        logger.info(
+            "OBSERVABILITY_DEBUG=true — DEBUG logging enabled on A365 exporter "
+            "and MSAL auth (expect verbose per-export and per-token-exchange logs)"
+        )
+
+
 async def _agentic_user_token_resolver(agent_id: str, tenant_id: str) -> Optional[str]:
     """Async token resolver for A365 first-party telemetry.
 
@@ -82,6 +102,8 @@ def init_observability(
     global _initialized
     if _initialized:
         return True
+
+    _enable_a365_exporter_debug_logging()
 
     enable_a365 = os.getenv("ENABLE_A365_OBSERVABILITY_EXPORTER", "false").lower() == "true"
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
