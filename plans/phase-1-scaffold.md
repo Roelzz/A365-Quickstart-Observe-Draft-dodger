@@ -6,7 +6,7 @@ Build a new Microsoft Agent 365 agent called **Draft Dodger** that analyses draf
 
 The agent is for a demo. The user wants it running locally first, with deployment + tenant registration deferred to a follow-up phase.
 
-The user referenced `https://github.com/bap-microsoft/a365-demo-tenant-automation` as a source repo, but that repo is gated behind Microsoft EMU SSO and not accessible via WebFetch. The local **`/Users/roelschenk/Downloads/Projects/A365_Hello_World/`** project is the canonical reference and matches the `a365-agent-builder` skill exactly — the same framework files (`agent_interface.py`, `host_agent_server.py`, `start_with_generic_host.py`, `local_authentication_options.py`, `token_cache.py`), the same `deployment script/` folder with `deploy.ps1` / `initialize_a365_config.ps1` / `get_mos_token.py` / manifest templates / Teams app package. So the plan uses Hello World as the template; if the GitHub repo has anything extra needed for tenant registration, we can pull it in during Phase 2.
+The user referenced `https://github.com/bap-microsoft/a365-demo-tenant-automation` as a source repo, but that repo is gated behind Microsoft EMU SSO and not accessible via WebFetch. The local **`<a365-hello-world-reference>/`** project is the canonical reference and matches the `a365-agent-builder` skill exactly — the same framework files (`agent_interface.py`, `host_agent_server.py`, `start_with_generic_host.py`, `local_authentication_options.py`, `token_cache.py`), the same `deployment script/` folder with `deploy.ps1` / `initialize_a365_config.ps1` / `get_mos_token.py` / manifest templates / Teams app package. So the plan uses Hello World as the template; if the GitHub repo has anything extra needed for tenant registration, we can pull it in during Phase 2.
 
 ## Decisions (locked in via interview)
 
@@ -17,12 +17,12 @@ The user referenced `https://github.com/bap-microsoft/a365-demo-tenant-automatio
 | `agent_class_name` | `DraftDodgerAgent` |
 | `agent_short_description` | `Email risk advisor that protects you from professional regret` |
 | `agent_full_description` | `Analyses draft emails before you send them. Scores passive aggression, emotional temperature, and formality match; flags risky phrases with rewrites; gives a verdict — SEND, TONE DOWN, or DELETE AND WALK AWAY — with a confidence score.` |
-| `project_dir` | `/Users/roelschenk/Downloads/Projects/A365_Draft_Dodger` (already exists, empty) |
+| `project_dir` | `<repo-root>` (already exists, empty) |
 | `mcp_servers` | **None** — chat-only, no Mail/Calendar/Knowledge/Me. `ToolingManifest.json` ships with an empty `mcpServers: []` array. |
 | `notifications` | **None** — agent only responds to chat messages. Omit `NotificationTypes` import and the `handle_agent_notification_activity` method from `agent.py`. |
 | `azure_openai_model` | `gpt-5.4-nano` (user-specified — interpreted from "Gpt 55.4 nano"). ⚠️ **Risk**: the skill explicitly lists gpt-5.4-pro as unsupported (reasoning model, uses Responses API not Chat Completions). gpt-5.4-nano may be in the same family and fail at runtime with `"Model does not support Chat Completions"`. If that happens, fall back to `gpt-4.1`. The deployment name in `.env` is whatever the user has provisioned in their Azure OpenAI account. |
 | `azure_region` | `westeurope` (default) |
-| `dev_tunnel_id` | `a365-draft-dodger` |
+| `dev_tunnel_id` | `<your-tunnel-name>` |
 | `scope` | **Phase 1 only** — scaffold + local verification. Deploy + Teams publish deferred. |
 
 ## Approach
@@ -33,7 +33,7 @@ The agent's system prompt is the user-supplied Draft Dodger spec, wrapped with t
 
 ## Critical files to create
 
-All paths under `/Users/roelschenk/Downloads/Projects/A365_Draft_Dodger/`:
+All paths under `<repo-root>/`:
 
 **Copied verbatim from `A365_Hello_World/`:**
 - `agent_interface.py`
@@ -82,7 +82,7 @@ All paths under `/Users/roelschenk/Downloads/Projects/A365_Draft_Dodger/`:
 After scaffold:
 
 ```bash
-cd /Users/roelschenk/Downloads/Projects/A365_Draft_Dodger
+cd <repo-root>
 cp .env.example .env
 # user fills in AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT (= "gpt-5.4-nano" or whatever the deployment name is)
 uv run python start_with_generic_host.py

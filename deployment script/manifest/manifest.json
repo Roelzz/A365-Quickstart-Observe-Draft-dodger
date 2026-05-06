@@ -1,6 +1,6 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/vdevPreview/MicrosoftTeams.schema.json",
-  "id": "f4762823-0e5a-4603-b205-eff491673cb5",
+  "id": "<BLUEPRINT_ID>",
   "name": {
     "short": "Draft Dodger",
     "full": "Draft Dodger"
@@ -25,7 +25,7 @@
   },
   "bots": [
     {
-      "botId": "f4762823-0e5a-4603-b205-eff491673cb5",
+      "botId": "<BLUEPRINT_ID>",
       "scopes": [
         "personal"
       ],
@@ -35,7 +35,7 @@
   ],
   "agenticUserTemplates": [
     {
-      "id": "951e33ab-ae49-459b-b2ab-92303b20b623",
+      "id": "<AGENTIC_TEMPLATE_ID>",
       "file": "agenticUserTemplateManifest.json"
     }
   ]

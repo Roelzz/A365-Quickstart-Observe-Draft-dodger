@@ -1,6 +1,6 @@
 {
-  "id": "951e33ab-ae49-459b-b2ab-92303b20b623",
+  "id": "<AGENTIC_TEMPLATE_ID>",
   "schemaVersion": "0.1.0-preview",
-  "agentIdentityBlueprintId": "f4762823-0e5a-4603-b205-eff491673cb5",
+  "agentIdentityBlueprintId": "<BLUEPRINT_ID>",
   "communicationProtocol": "activityProtocol"
 }

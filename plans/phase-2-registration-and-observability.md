@@ -34,8 +34,8 @@ Tenant config required (collect from user before starting):
 ### Steps
 
 1. **Create persistent DevTunnel.** ✅ **DONE.**
-   - Tunnel ID: `a365-draft-dodger.euw`
-   - Public URL: `https://a365-draft-dodger-3978.euw.devtunnels.ms`
+   - Tunnel ID: `<your-tunnel>.<region>`
+   - Public URL: `https://<your-tunnel>-3978.<region>.devtunnels.ms`
    - Anonymous connect access enabled. 30-day rolling expiration (refreshes on use).
    - To re-host: `devtunnel host a365-draft-dodger`.
 
@@ -48,7 +48,7 @@ Tenant config required (collect from user before starting):
 3. **Skip `deploy.ps1` entirely.** Copy `deployment script/deployment.json.example` to `deployment.json` at the project root. The example already points at the dev tunnel URL. Schema (confirmed from `initialize_a365_config.ps1`):
    ```json
    {
-     "endpoint": "https://a365-draft-dodger-3978.euw.devtunnels.ms/api/messages",
+     "endpoint": "https://<your-tunnel>-3978.<region>.devtunnels.ms/api/messages",
      "resourceGroup": "n/a-using-devtunnel"
    }
    ```
@@ -63,7 +63,7 @@ Tenant config required (collect from user before starting):
 
 5. **Run `a365 setup all --skip-infrastructure`.**
    ```bash
-   cd /Users/roelschenk/Downloads/Projects/A365_Draft_Dodger
+   cd <repo-root>
    a365 setup all --skip-infrastructure --verbose
    ```
    `--skip-infrastructure` is correct because `needDeployment=false` (we're using DevTunnel, no Container App). Device-code prompt — sign in with admin. Creates the blueprint, the service connection, and writes `a365.generated.config.json`.

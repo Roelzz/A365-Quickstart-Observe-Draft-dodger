@@ -4,6 +4,10 @@
 
 A Microsoft Agent 365 demo agent. Python, Microsoft Agents SDK, Azure AI Foundry (gpt-5.4-nano on the Responses API). Exposed to Microsoft 365 Copilot via a persistent Microsoft DevTunnel — runs on your laptop, available everywhere.
 
+> 🚀 **Forked this repo or moved it to a new machine?** Open Claude Code in the project root and run **`/draft-dodger-setup`** — the bundled project-local skill walks through prereq checks, app registration, dev tunnel, blueprint, publish, admin upload, and Copilot activation. Everything is interactive and asks for your tenant info as needed.
+>
+> Prefer to do it manually? Follow [`SETUP.md`](SETUP.md) instead — same flow, but you drive the commands.
+
 ## Documentation map
 
 | File | Purpose |
@@ -11,6 +15,7 @@ A Microsoft Agent 365 demo agent. Python, Microsoft Agents SDK, Azure AI Foundry
 | **`README.md` (this file)** | Project overview, architecture, demo-day ops |
 | [`SETUP.md`](SETUP.md) | Fresh-tenant runbook from clone to working in Copilot |
 | [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md) | Every error we hit + the fix. Read this first when something breaks |
+| [`.claude/skills/draft-dodger-setup/SKILL.md`](.claude/skills/draft-dodger-setup/SKILL.md) | Project-local Claude skill — interactive bootstrap. Invoke with `/draft-dodger-setup`. |
 | [`plans/phase-1-scaffold.md`](plans/phase-1-scaffold.md) | Phase 1 design notes (initial scaffold) |
 | [`plans/phase-2-registration-and-observability.md`](plans/phase-2-registration-and-observability.md) | Phase 2 design notes (registration + tracing) |
 
@@ -280,7 +285,7 @@ Two real M365 Copilot turns observed end-to-end during the demo:
 | 1 | 2026-05-06 08:15:58 | 13.4s | 383 chars | 639 | 315 | 1323 chars |
 | 2 | 2026-05-06 08:18:14 | 8.5s | **5677 chars** | 1025 | 187 | 767 chars |
 
-Span attributes captured per turn: `service.name=draft-dodger`, `gen_ai.system=azure_openai`, `gen_ai.operation.name=responses`, `gen_ai.request.model=gpt-5.4-nano`, agent identity `fc3ad290-1d0e-491e-aca7-d09fc89ad656`, tenant `efb073bb-…`. Turn 2's 5677-char input was a real-world-sized email draft.
+Span attributes captured per turn: `service.name=draft-dodger`, `gen_ai.system=azure_openai`, `gen_ai.operation.name=responses`, `gen_ai.request.model=gpt-5.4-nano`, plus `gen_ai.agent.id` and `microsoft.tenant.id`. Turn 2's 5677-char input was a real-world-sized email draft.
 
 These spans come from the manual OTel instrumentation in `agent.py:process_user_message` — the auto-instrumentor (`opentelemetry-instrumentation-openai-v2`) doesn't yet cover the Responses API. Details in [`LESSONS_LEARNED.md` §11](LESSONS_LEARNED.md#11-openai-otel-auto-instrumentation-gap-responses-api).
 
@@ -411,17 +416,17 @@ A365_Draft_Dodger/
 
 ---
 
-## Phase 2 — A365 registration via DevTunnel ✅ DONE
+## Phase 2 — A365 registration via DevTunnel
 
 The agent runs locally on `:3978`, exposed via a persistent Microsoft DevTunnel. A365 has the tunnel URL registered as the agent's messaging endpoint instead of an Azure Container App URL.
 
-Currently running:
-- **Tunnel:** `a365-draft-dodger.euw` → `https://a365-draft-dodger-3978.euw.devtunnels.ms` (anonymous, 30-day rolling expiration)
-- **Blueprint:** `f4762823-0e5a-4603-b205-eff491673cb5` (registered, endpoint pointing at the tunnel)
-- **Custom client app:** `85f1359c-691a-4cc4-9401-abe5bc1e2f18` (with all 6 Graph permissions + admin consent)
-- **Manifest:** `manifest/manifest.zip` uploaded via https://admin.microsoft.com → Agents
+Per fork, you'll end up with:
+- **Tunnel:** `<your-tunnel>` → `https://<your-tunnel>-3978.<region>.devtunnels.ms` (anonymous, 30-day rolling expiration)
+- **Blueprint:** `<YOUR_BLUEPRINT_ID>` (registered, endpoint pointing at the tunnel)
+- **Custom client app:** `<YOUR_CLIENT_APP_ID>` (with all 6 Graph permissions + admin consent)
+- **Manifest:** `manifest/manifest.zip` uploaded via https://admin.microsoft.com → Agents (gitignored — generated per fork)
 
-To reproduce on a fresh tenant from scratch, follow [`SETUP.md`](SETUP.md).
+To reproduce on a fresh tenant from scratch, follow [`SETUP.md`](SETUP.md) — or just run **`/draft-dodger-setup`** in Claude Code (the project-local skill bundled in `.claude/skills/`).
 
 ---
 

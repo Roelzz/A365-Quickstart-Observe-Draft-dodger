@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "description": "Stand-in for deploy.ps1's deployment.json output when running locally via DevTunnel. initialize_a365_config.ps1 reads `endpoint` from this file and writes it into a365.config.json as messagingEndpoint. Copy to deployment.json (project root, NOT this folder) and adjust as needed.",
-  "endpoint": "https://a365-draft-dodger-3978.euw.devtunnels.ms/api/messages",
+  "endpoint": "https://<your-tunnel-name>-3978.<region>.devtunnels.ms/api/messages",
   "resourceGroup": "n/a-using-devtunnel"
 }

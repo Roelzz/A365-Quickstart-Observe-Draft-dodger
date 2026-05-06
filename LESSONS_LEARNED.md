@@ -2,7 +2,7 @@
 
 A categorized post-mortem of every non-obvious thing we hit while building this agent. Each entry: **Symptom · Root cause · Fix · Why it matters**. If you're following [`SETUP.md`](SETUP.md) and something looks broken, this is the document to skim first.
 
-> Context for the numbers below: build was on a Mac (Darwin 25), Azure AI Foundry project on `a365-demo.services.ai.azure.com`, gpt-5.4-nano deployment, tenant `efb073bb-283b-4757-a252-22af963721bc`. SDK versions cited are the ones that bit us — newer versions may have moved.
+> Context: build was on macOS (Darwin 25), Azure AI Foundry project, gpt-5.4-nano deployment. Tenant + tunnel + blueprint identifiers redacted — substitute your own. SDK versions cited are the ones that bit us; newer versions may have moved.
 
 ---
 
@@ -81,7 +81,7 @@ See lesson 1.3. Same root: framework code is built for the deployment-style URL 
 ## 4. a365 CLI 1.1.109 endpoint-registration bug
 
 - **Symptom:** `ERROR: Failed to call create endpoint. Status: BadRequest` with `"errors":{"CallbackUri":["Callback URI is required"],"AgentIdentityBlueprintId":["Agent Identity Blueprint ID is required"]}`
-- **Root cause:** The CLI's local debug logs show the values are populated (`Endpoint Name: a365-draft-dodger-…`, `Agent Blueprint ID: f4762823-…`), but the JSON it sends to the A365 backend uses old field names (`AppId` instead of `AgentIdentityBlueprintId`, no `CallbackUri` at all). The server-side schema was renamed; the old client wasn't updated.
+- **Root cause:** The CLI's local debug logs show the values are populated (`Endpoint Name: <your-tunnel>-…`, `Agent Blueprint ID: <YOUR_BLUEPRINT_ID>`), but the JSON it sends to the A365 backend uses old field names (`AppId` instead of `AgentIdentityBlueprintId`, no `CallbackUri` at all). The server-side schema was renamed; the old client wasn't updated.
 - **Fix:** Update the CLI:
   ```bash
   dotnet tool update -g Microsoft.Agents.A365.DevTools.Cli

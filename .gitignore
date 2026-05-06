@@ -40,6 +40,10 @@ demo-tenant.config.json
 
 # Manifest build output
 deployment script/manifest/*.zip
+# a365 publish writes the project-root manifest/ folder per fork.
+# It contains the user's blueprint ID and agentic-template UUID — must not be committed.
+manifest/*.json
+manifest/*.zip
 
 # MOS token
 /tmp/mos_token.txt
