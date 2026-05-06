@@ -372,7 +372,21 @@ ENABLE_A365_OBSERVABILITY=true
 ENABLE_A365_OBSERVABILITY_EXPORTER=true
 ```
 
-## 17. `Response.__init__()` takes `messages`, not `content`
+## 17. `AgentDetails.agent_id` must be the **agentic-user identity**, not the blueprint id
+
+The A365 ingest URL is `/observability/tenants/<tenant>/otlp/agents/<agent_id>/traces`. The `<agent_id>` slot is filled from `AgentDetails.agent_id`. **It must be the per-user agentic-user identity (e.g. `fc3ad290-…`), not the blueprint id (e.g. `f4762823-…`).** Sending the blueprint id returns:
+
+```
+HTTP 400 EndpointInvalid: Tenant id  is invalid.
+```
+
+(Same misleading error message as Bug 3 — the server's interpolation has a blank for tenant when its agent-id lookup fails. Don't be sent down the tenant-id path.)
+
+- The agentic-user id is stamped at runtime by `host_agent_server.py:_validate_agent_and_setup_context` from `context.activity.recipient.agentic_app_id`. Pull it from the TurnContext, not from env vars.
+- The blueprint id (which DOES live in `AGENT365OBSERVABILITY__AGENTBLUEPRINTID`) belongs in `AgentDetails.agent_blueprint_id`, a separate field.
+- The standalone test script reads the agentic-user id from `/tmp/otelwrite_token.json` (which `observability.py` populated from a real turn's token claims), so it works correctly. The live agent must read it from `TurnContext` per turn.
+
+## 18. `Response.__init__()` takes `messages`, not `content`
 
 Trivial but lost ~10 minutes. The dataclass `microsoft_agents_a365.observability.core.models.response.Response`:
 
@@ -386,7 +400,7 @@ class Response:
 
 ---
 
-## 18. Demo-day operations
+## 19. Demo-day operations
 
 - **The agent's stdout is your demo's best evidence.** Every M365 Copilot turn produces:
   - `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...` — proves the HTTP request landed
@@ -436,4 +450,5 @@ class Response:
 | Spans seem to be created but no exporter logs at all in the agent log | §14 Bug 4 | `logging.basicConfig(level=INFO)` filters DEBUG everywhere. Set `OBSERVABILITY_DEBUG=true` and ensure `observability.py` lowers root + handlers + namespace levels. |
 | Spans ingested with HTTP 200, but `admin.cloud.microsoft → Agents → <agent> → Activity` stays empty | §15 | Plain OTel spans don't render in the UI. Use `InvokeAgentScope` + `InferenceScope` + `OutputScope` from the A365 SDK. |
 | No `Span started: …` log lines, no exporter activity, no errors — completely silent | §16 | You set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` but forgot `ENABLE_A365_OBSERVABILITY=true`. The scopes' separate gate is unset. |
-| `TypeError: Response.__init__() got an unexpected keyword argument 'content'` | §17 | The kwarg is `messages`, not `content`. `Response(messages=output_text)`. |
+| `TypeError: Response.__init__() got an unexpected keyword argument 'content'` | §18 | The kwarg is `messages`, not `content`. `Response(messages=output_text)`. |
+| `HTTP 400 EndpointInvalid: Tenant id  is invalid` from the **live** agent (not standalone) | §17 | `AgentDetails.agent_id` is your blueprint id. It must be the agentic-user id from `context.activity.recipient.agentic_app_id`. |
