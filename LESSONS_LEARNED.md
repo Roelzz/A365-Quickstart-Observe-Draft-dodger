@@ -450,31 +450,63 @@ A365 native ingest works (HTTP 200, `rejectedSpans:0`), but **none of the obviou
 **Other gotchas, observed.**
 - `admin.cloud.microsoft → Agents → <agent> → Activity` is **not** the same surface as the user-level Activity tab in Teams (`learn.microsoft.com/en-us/microsoft-agent-365/observe`). The user-level tab requires the viewer to be assigned as the **agent manager in Microsoft Entra**: *"Non-managers can't see the agent's activity."* The admin-centre surface is a third view that overlays both and may also depend on the Defender for Cloud Apps + Purview AI Observability data path being licensed.
 
-**The real gate: agent-type allowlist on the rollup ETL (verified via internal admin API).** The Activity tab is fed by `https://admin.cloud.microsoft/admin/api/metrics/GetAgentActivityMetrics?agentIdType=GUID&agentId=<agentic-user-id>` (visible in the browser DevTools Network tab while loading the Activity tab). Hitting it directly while signed into the admin portal returns:
+**The real Microsoft-cloud surface is Microsoft Purview Audit log — not the admin-centre Activity tab.** After exhausting the Activity tab, the right thing to look at is the unified audit log:
+
+```powershell
+Get-AdminAuditLogConfig | Format-List UnifiedAuditLogIngestionEnabled  # must be True
+Search-UnifiedAuditLog -StartDate (Get-Date).AddDays(-3) -EndDate (Get-Date) `
+    -FreeText 'fc3ad290-1d0e-491e-aca7-d09fc89ad656' -ResultSize 100 |
+    Group-Object RecordType | Format-Table Name, Count
+# Name                Count
+# AIInferenceCall        22
+# AIInvokeAgent          18
+# AzureActiveDirectory    6
+# CopilotInteraction      4
+```
+
+Sample row, captured from `scripts/test_a365_export.py`'s synthetic turns:
 
 ```json
 {
-  "getAgent365ReportPerAgentData": {
-    "tenantId": "<tenant>",
-    "agentIdentifier": {"value": "<agentic-user-id>", "type": "GUID"},
-    "agentName": "Draft Dodger Identity",
-    "reportRefreshTime": null,
-    "agentUsageMetricsOverviewRL7":  {"totalActiveUsers": 0, "totalInvocations": 0, "totalSessions": 0, ...},
-    "agentUsageMetricsOverviewRL30": {"totalActiveUsers": 0, "totalInvocations": 0, "totalSessions": 0, ...},
-    "agentUsageMetricsRL1ByDate": [],
-    "agentUsageUserDetailsByPeriod": [],
-    "nextlink": null
+  "AgentBlueprintId":"f4762823-0e5a-4603-b205-eff491673cb5",
+  "AgentId":"fc3ad290-1d0e-491e-aca7-d09fc89ad656",
+  "AgentName":"Draft Dodger",
+  "OrganizationId":"efb073bb-283b-4757-a252-22af963721bc",
+  "Operation":"InferenceCall",
+  "RecordType":407,
+  "Workload":"Agent365",
+  "UserId":"agent-fc3ad290-1d0e-491e-aca7-d09fc89ad656@agent365.local",
+  "CopilotEventData": {
+    "ChannelName":"msteams",
+    "ConversationId":"test-conversation-75a9e7c9-…",
+    "PlatformAgentType":"CustomBuiltAgentsUsingSDK",
+    "RequestId":"d21123f5-9c24-4f84-9740-cc194874e31c",
+    "ResponseId":"2bcecc2f-7b14-417a-b99b-267cba887a3b"
   }
 }
 ```
 
-That's not "agent unknown" — the agent **is recognised** (tenant + GUID + display name resolve correctly). It's "agent recognised, every rollup metric is zero, report has never been refreshed." `RL7`/`RL30`/`RL1ByDate` is the same `Rolling Last N days` naming convention used by Microsoft Graph M365 reports, which all run on a daily ETL with documented 24–72h latency — but here `reportRefreshTime: null` indicates the rollup pipeline has *never* processed this agent at all, not a latency lag.
+Three subtleties that mask this if you don't know to look:
 
-Cross-referenced with the docs sentence *"Activity metrics are currently supported for Microsoft 365 Copilot Agent Builder, SharePoint, and Microsoft 365 Agents Toolkit agent types"* (`learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-details`, snapshot 2026-04-21), the conclusion is firm: **the rollup ETL filters by agent type, and custom Python A365 SDK / `a365` CLI–registered agentic blueprints are not in the allowlist.** No amount of schema-correctness on our spans changes that today; the gate is upstream of attribute validation.
+1. **The Activity tab and the audit log are different surfaces.** The Activity tab is a *metrics rollup* with its own ETL that today only supports Copilot Agent Builder / SharePoint / Agents Toolkit agent types (per `learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-details`). It will stay empty for `CustomBuiltAgentsUsingSDK` agents until Microsoft expands the rollup's agent-type coverage. The **audit log** has zero such restriction — every span we accept lands there.
+2. **Field positions vary by RecordType.** For `AIInferenceCall` (407) the agent ID is in the top-level `AgentId` field; for `AIInvokeAgent` (406) the `AgentId`/`AgentBlueprintId` fields are zeroed out and the actual agent lives in `TargetAgentId`/`TargetAgentBlueprintId`. A `Search-UnifiedAuditLog -RecordType AIInvokeAgent -ResultSize 100` query that's *ordered by date* may return 100 rows of *other* tenants' agents and hide yours past the cutoff. Use `-FreeText '<your-agent-guid>'` instead — it scans the full `AuditData` blob across both field positions.
+3. **Latency is 30 min – 24 h** on the audit pipeline (consistent with Office 365 Management Activity API SLAs). Don't expect Aspire-style real-time. For real-time, use the Aspire mirror (§19).
 
-The schema fix above is still correct — necessary for any future render path once Microsoft expands the allowlist — but the only Microsoft-cloud render surface that *will* light up for this agent type today is whatever Defender / Purview surfaces are licensed in the tenant. With neither, the local Aspire mirror (§19) stays the demo proof.
+**Two ways to query.**
 
-**How to escalate productively.** Open a GitHub issue at `microsoft/Agents-for-python` or a Microsoft Q&A entry under `microsoft-agent-365` with: (a) HTTP 200 / `rejectedSpans:0` correlation IDs from the exporter, (b) the dumped span attribute set proving full schema compliance, (c) the `getAgent365ReportPerAgentData` response above showing `reportRefreshTime: null`, (d) the docs quote naming the three supported agent types. The concrete ask: *"When will Activity metrics support custom Python A365 SDK agents (agentic blueprints registered via the `a365` CLI), or is there a path to register a pro-code Python A365 agent as one of the three supported types while keeping the Python runtime?"*
+GUI: https://purview.microsoft.com → **Audit** → Search → Date range last 24h → **Workloads** = `Agent365`, **Record types** = `AIInferenceCall` / `AIInvokeAgent` / `AIExecuteTool`, **Keyword Search** = your agent GUID. Click **Search**, wait ~5 min for the search job to complete, then expand any row to see the full `AuditData` JSON.
+
+CLI: the bundled `scripts/query-audit.sh` keeps a persistent `pwsh + Connect-ExchangeOnline -Device` session alive between runs (state in `/tmp/eo_session.*`) so you sign in once per laptop session and every subsequent query is zero-prompt:
+
+```bash
+scripts/query-audit.sh                      # default: last 1d, agent GUID
+scripts/query-audit.sh "Draft Dodger" 7     # 7-day search by display name
+scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 3
+```
+
+First run prints a `https://login.microsoft.com/device` URL + code. After that it reuses the live `pwsh` process until reboot or `pkill -f eo_loop`.
+
+The schema fix above (the four required attributes) is still correct and necessary — without it, the audit log rows would have `UserId: "N/A"` instead of the synthesised `agent-…@agent365.local`. With it, every row tied to a turn carries identity context downstream tools (Defender, Purview AI Hub) can query.
 
 ---
 
