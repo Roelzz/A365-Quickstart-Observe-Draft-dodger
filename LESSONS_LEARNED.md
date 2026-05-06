@@ -449,7 +449,32 @@ A365 native ingest works (HTTP 200, `rejectedSpans:0`), but **none of the obviou
 
 **Other gotchas, observed.**
 - `admin.cloud.microsoft → Agents → <agent> → Activity` is **not** the same surface as the user-level Activity tab in Teams (`learn.microsoft.com/en-us/microsoft-agent-365/observe`). The user-level tab requires the viewer to be assigned as the **agent manager in Microsoft Entra**: *"Non-managers can't see the agent's activity."* The admin-centre surface is a third view that overlays both and may also depend on the Defender for Cloud Apps + Purview AI Observability data path being licensed.
-- Microsoft's docs for the Activity tab specify *"Activity metrics are currently supported for Microsoft 365 Copilot Agent Builder, SharePoint, and Microsoft 365 Agents Toolkit agent types."* Custom Python A365 SDK agents are not in this allowlist — the schema-fix above is necessary but might not be sufficient. If the Aspire mirror is the only surface that lights up after the schema fix, that's still useful evidence to escalate to Microsoft.
+
+**The real gate: agent-type allowlist on the rollup ETL (verified via internal admin API).** The Activity tab is fed by `https://admin.cloud.microsoft/admin/api/metrics/GetAgentActivityMetrics?agentIdType=GUID&agentId=<agentic-user-id>` (visible in the browser DevTools Network tab while loading the Activity tab). Hitting it directly while signed into the admin portal returns:
+
+```json
+{
+  "getAgent365ReportPerAgentData": {
+    "tenantId": "<tenant>",
+    "agentIdentifier": {"value": "<agentic-user-id>", "type": "GUID"},
+    "agentName": "Draft Dodger Identity",
+    "reportRefreshTime": null,
+    "agentUsageMetricsOverviewRL7":  {"totalActiveUsers": 0, "totalInvocations": 0, "totalSessions": 0, ...},
+    "agentUsageMetricsOverviewRL30": {"totalActiveUsers": 0, "totalInvocations": 0, "totalSessions": 0, ...},
+    "agentUsageMetricsRL1ByDate": [],
+    "agentUsageUserDetailsByPeriod": [],
+    "nextlink": null
+  }
+}
+```
+
+That's not "agent unknown" — the agent **is recognised** (tenant + GUID + display name resolve correctly). It's "agent recognised, every rollup metric is zero, report has never been refreshed." `RL7`/`RL30`/`RL1ByDate` is the same `Rolling Last N days` naming convention used by Microsoft Graph M365 reports, which all run on a daily ETL with documented 24–72h latency — but here `reportRefreshTime: null` indicates the rollup pipeline has *never* processed this agent at all, not a latency lag.
+
+Cross-referenced with the docs sentence *"Activity metrics are currently supported for Microsoft 365 Copilot Agent Builder, SharePoint, and Microsoft 365 Agents Toolkit agent types"* (`learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-details`, snapshot 2026-04-21), the conclusion is firm: **the rollup ETL filters by agent type, and custom Python A365 SDK / `a365` CLI–registered agentic blueprints are not in the allowlist.** No amount of schema-correctness on our spans changes that today; the gate is upstream of attribute validation.
+
+The schema fix above is still correct — necessary for any future render path once Microsoft expands the allowlist — but the only Microsoft-cloud render surface that *will* light up for this agent type today is whatever Defender / Purview surfaces are licensed in the tenant. With neither, the local Aspire mirror (§19) stays the demo proof.
+
+**How to escalate productively.** Open a GitHub issue at `microsoft/Agents-for-python` or a Microsoft Q&A entry under `microsoft-agent-365` with: (a) HTTP 200 / `rejectedSpans:0` correlation IDs from the exporter, (b) the dumped span attribute set proving full schema compliance, (c) the `getAgent365ReportPerAgentData` response above showing `reportRefreshTime: null`, (d) the docs quote naming the three supported agent types. The concrete ask: *"When will Activity metrics support custom Python A365 SDK agents (agentic blueprints registered via the `a365` CLI), or is there a path to register a pro-code Python A365 agent as one of the three supported types while keeping the Python runtime?"*
 
 ---
 
