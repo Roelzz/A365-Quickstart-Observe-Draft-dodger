@@ -217,10 +217,13 @@ If your test user can't find it: check the M365 admin center → Agents → your
       exporter_options=SpectraExporterOptions(endpoint=..., protocol="grpc") | Agent365ExporterOptions(...) | None,
   )
   ```
-- **Without exporter options or a token resolver**, the SDK falls back to a **console exporter** that pretty-prints span JSON to stdout. This is unbelievably useful for local dev — you literally see every span in your agent log.
-- For real backends:
-  - Local Aspire Dashboard / Jaeger / otelcol → `SpectraExporterOptions(endpoint="http://localhost:4317", protocol="grpc", insecure=True)`
-  - A365's first-party telemetry → `Agent365ExporterOptions(token_resolver=…)` (token resolver fetches an agentic-user token for `Agent365.Observability.OtelWrite` scope)
+- **Without exporter options or a token resolver**, the SDK falls back to a **console exporter** that pretty-prints span JSON to stdout. Useful for local dev — you literally see every span in your agent log — but the spans go nowhere persistent.
+- For real backends, three options:
+  - **A365 first-party telemetry** (the native path, recommended for demos): `Agent365ExporterOptions(token_resolver=<async callable>)`. The token resolver receives `(agent_id, tenant_id)` and must return an agentic-user bearer token for scope `api://9b975845-388f-4429-889e-eab1ef63949c/Agent365.Observability.OtelWrite`. **Critical:** the token resolver must be `async`. The token itself comes from a JWT exchange that happens per turn in `host_agent_server.py:_cache_observability_token` — the exchanged token is stored in the in-memory `token_cache.py` keyed by `(tenant_id, agent_id)`. Spans surface in **admin.microsoft.com → Agents → &lt;agent&gt; → Activity tab**.
+  - Local Aspire Dashboard / Jaeger / otelcol → `SpectraExporterOptions(endpoint="http://localhost:4317", protocol="grpc", insecure=True)`.
+  - App Insights → not directly supported by `Agent365ExporterOptions`. Wire `AzureMonitorTraceExporter` separately on the tracer provider after `configure()`.
+- **Cold-start gotcha (A365 native):** the first turn after agent startup may not export — the token cache is empty until `host_agent_server.py` exchanges and caches the token, which happens inside the turn. The SDK retries on subsequent turns; lost first-turn spans are usually acceptable for demos. If they aren't, prime the cache up front.
+- **Idempotent configure:** the SDK logs `a365 observability already configured. Ignoring repeated configure() call.` if `configure()` is called twice. Benign.
 
 ---
 

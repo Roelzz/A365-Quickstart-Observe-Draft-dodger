@@ -480,17 +480,17 @@ Wired up in `observability.py` and called from `agent.py` at import time. Each c
 
 ### Where the spans go
 
-By default (no OTLP endpoint, no App Insights connection string) the Microsoft Agent 365 SDK falls back to a **console exporter** — spans are pretty-printed to stdout. Useful for local dev and demos.
+`observability.py` picks one of three backends at startup, based on `.env`:
 
-To export elsewhere, set one of:
+| Priority | Env var | Backend | Where to view spans |
+|---|---|---|---|
+| 1 | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` | **A365 first-party telemetry** (`Agent365ExporterOptions`) | https://admin.microsoft.com → Agents → &lt;your agent&gt; → **Activity** tab. This is the recommended path for the demo — it's *native* A365 observability. |
+| 2 | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` | **OTLP / Spectra** (`SpectraExporterOptions`) | Aspire Dashboard at http://localhost:18888 (or any OTel collector). |
+| 3 | (none of the above) | **Console fallback** | The agent's stdout — span JSON pretty-prints after each turn. Useful for live demos but loses the spans the moment the process exits. |
 
-```bash
-# Local OTLP collector (Aspire Dashboard, Jaeger, otelcol, etc.)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+The A365 first-party exporter requires an agentic-user token for scope `Agent365.Observability.OtelWrite`. `host_agent_server.py` exchanges the inbound JWT for that token at the start of every turn and caches it via `cache_agentic_token(...)`; `observability.py:_agentic_user_token_resolver` reads from the cache when the SDK asks for a token to attach to span exports. See [`LESSONS_LEARNED.md` §12](LESSONS_LEARNED.md#12-microsoft-agent-365-observability-sdk-api) for the SDK-side details.
 
-# Cloud (Azure Monitor / App Insights)
-APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
-```
+`a365 setup all` already stamps `ENABLE_A365_OBSERVABILITY_EXPORTER=false` plus the `AGENT365OBSERVABILITY__*` agent-identity values into `.env` — flip the flag to `true` to enable the native path. App Insights via `APPLICATIONINSIGHTS_CONNECTION_STRING` is in the deps but not wired in this build (the A365 SDK doesn't take an AppInsights option directly; needs a separate `AzureMonitorTraceExporter` on the tracer provider).
 
 ### Note on `OpenAIInstrumentor`
 
