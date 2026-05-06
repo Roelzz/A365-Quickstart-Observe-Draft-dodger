@@ -42,8 +42,13 @@ from microsoft_agents_a365.observability.core import (
     get_tracer_provider,
     is_configured,
 )
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+)
 
 from token_cache import get_cached_agentic_token
 
@@ -77,6 +82,47 @@ def _enable_a365_exporter_debug_logging() -> None:
             "OBSERVABILITY_DEBUG=true — DEBUG logging enabled on A365 exporter "
             "and MSAL auth (expect verbose per-export and per-token-exchange logs)"
         )
+
+
+def _attach_otlp_mirror() -> None:
+    """When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, attach a second
+    `BatchSpanProcessor` + `OTLPSpanExporter` to the active tracer provider so
+    every span is also pushed to a local OTLP receiver (Aspire Dashboard,
+    Jaeger, otelcol, etc.) **in addition to** the primary A365 exporter.
+
+    Decoupled from A365 ingest success/failure — the demo surface keeps working
+    even if the native path hits a downstream issue. Independent of the
+    `ConsoleSpanExporter` mirror that fires under `OBSERVABILITY_DEBUG=true`.
+
+    Aspire Dashboard run-it-yourself one-liner:
+
+        podman run --rm -d --name aspire-dashboard \\
+          -p 18888:18888 -p 4317:18889 \\
+          -e DASHBOARD__OTLP__AUTHMODE=Unsecured \\
+          mcr.microsoft.com/dotnet/aspire-dashboard:latest
+
+    Then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` in `.env` and
+    open http://localhost:18888.
+    """
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
+        return
+    try:
+        provider = get_tracer_provider()
+        if provider is None or not hasattr(provider, "add_span_processor"):
+            logger.warning("Cannot attach OTLP mirror — tracer provider has no add_span_processor")
+            return
+        provider.add_span_processor(
+            BatchSpanProcessor(
+                OTLPSpanExporter(
+                    endpoint=endpoint,
+                    insecure=endpoint.startswith("http://"),
+                )
+            )
+        )
+        logger.info("OTLP mirror attached at %s — every span will also push to that endpoint", endpoint)
+    except Exception as e:
+        logger.warning("Failed to attach OTLP mirror: %s", e)
 
 
 def _attach_console_span_mirror() -> None:
@@ -239,6 +285,7 @@ def init_observability(
     except Exception as e:
         logger.warning("OpenAI instrumentor failed: %s", e)
 
+    _attach_otlp_mirror()
     _attach_console_span_mirror()
 
     _initialized = True

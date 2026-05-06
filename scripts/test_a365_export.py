@@ -25,7 +25,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(REPO_ROOT / ".env")
+sys.path.insert(0, str(REPO_ROOT))  # so we can `import token_cache, observability`
 
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(name)s:%(message)s")
 
@@ -51,7 +53,6 @@ print(f"  tenant: {TENANT_ID}")
 print(f"  agent:  {AGENT_ID}\n")
 
 from microsoft_agents_a365.observability.core import (
-    Agent365ExporterOptions,
     AgentDetails,
     CallerDetails,
     Channel,
@@ -64,24 +65,19 @@ from microsoft_agents_a365.observability.core import (
     Request,
     ServiceEndpoint,
     UserDetails,
-    configure,
     get_tracer_provider,
 )
 from microsoft_agents_a365.observability.core.models.response import Response
 
 
-def fixed_token_resolver(agent_id: str, tenant_id: str) -> str | None:
-    return TOKEN
+# Override the cache so observability.py's resolver returns our captured token
+# instead of looking for a fresh per-turn token (which doesn't exist offline).
+import token_cache as _tc
+_tc.cache_agentic_token(TENANT_ID, AGENT_ID, TOKEN)
 
+from observability import init_observability
 
-configure(
-    service_name="draft-dodger-test",
-    service_namespace="a365.demo",
-    exporter_options=Agent365ExporterOptions(
-        cluster_category="prod",
-        token_resolver=fixed_token_resolver,
-    ),
-)
+init_observability()
 
 print("=== creating InvokeAgentScope → InferenceScope → OutputScope triple ===\n")
 

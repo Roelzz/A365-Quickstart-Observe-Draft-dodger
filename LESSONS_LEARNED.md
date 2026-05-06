@@ -400,7 +400,37 @@ class Response:
 
 ---
 
-## 19. Demo-day operations
+## 19. Demo visibility on a tenant without Defender for Cloud Apps
+
+A365 native ingest works (HTTP 200, `rejectedSpans:0`), but **none of the obvious UI surfaces render the spans** for an audience to see:
+
+| Surface | Why it doesn't help (today) |
+|---|---|
+| `admin.cloud.microsoft → Agents → <agent> → Activity` tab | Aggregated/delayed view. May populate over hours. Worded "When people are using agents, their usage data will show up here" — derived stats, not raw OTel traces. |
+| Defender XDR → Advanced Hunting → `CloudAppEvents` | Table only exists in tenants with **Microsoft Defender for Cloud Apps** SKU (M365 E5, Defender for Cloud Apps standalone, or E5 Security add-on). Returns "No definition found" otherwise. |
+| Microsoft Purview → Audit log | Lower-bar prerequisite (most tenants have auditing on). Whether OTel spans surface as audit rows depends on workload taxonomy. Worth trying. |
+| Foundry portal | Speculative; not confirmed as a Draft Dodger surface. |
+
+**Solution: run an Aspire Dashboard locally and add a second OTLP exporter mirror to the agent's tracer provider.** Spans then push to Aspire concurrently with A365. Real-time visual UI at `http://localhost:18888`. Zero licensing.
+
+- Code: `observability.py:_attach_otlp_mirror()` adds a `BatchSpanProcessor + OTLPSpanExporter` when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Independent of A365 ingest — survives downstream A365 issues.
+- Run it: `bash scripts/aspire-up.sh` (auto-detects podman vs docker, pulls + runs `mcr.microsoft.com/dotnet/aspire-dashboard:latest`, exposes UI on 18888 and OTLP/gRPC on 4317).
+- Three concurrent exporters per span, each gated by its own env var:
+
+  | # | Exporter | Env gate | Destination | Purpose |
+  |---|---|---|---|---|
+  | 1 | `_Agent365Exporter` | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` | `agent365.svc.cloud.microsoft` | Production / governance — the canonical claim |
+  | 2 | `OTLPSpanExporter` | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` | Local Aspire Dashboard | **Live demo surface** |
+  | 3 | `ConsoleSpanExporter` | `OBSERVABILITY_DEBUG=true` | Agent stdout | Deep diagnostic |
+
+- Aspire's dashboard requires a one-time login token (visible in `podman logs aspire-dashboard`): `http://localhost:18888/login?t=<token>`. After the first auth, the cookie persists.
+- BatchSpanProcessor flushes every 5s by default — wait up to 5s after a turn ends for spans to appear in Aspire.
+
+**For tenants that DO have Defender for Cloud Apps**: drop the Aspire mirror and rely on `CloudAppEvents` Advanced Hunting queries instead — that's the canonical Microsoft-supported surface. Aspire stays as the dev-time visual.
+
+---
+
+## 20. Demo-day operations
 
 - **The agent's stdout is your demo's best evidence.** Every M365 Copilot turn produces:
   - `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...` — proves the HTTP request landed
