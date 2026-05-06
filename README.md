@@ -500,16 +500,17 @@ The A365 first-party exporter requires an agentic-user token for scope `Agent365
 
 `a365 setup all` already stamps `ENABLE_A365_OBSERVABILITY_EXPORTER=false` plus the `AGENT365OBSERVABILITY__*` agent-identity values into `.env` — flip the flag to `true` to enable the native path. App Insights via `APPLICATIONINSIGHTS_CONNECTION_STRING` is in the deps but not wired in this build (the A365 SDK doesn't take an AppInsights option directly; needs a separate `AzureMonitorTraceExporter` on the tracer provider).
 
-> ⚠️ **Getting native A365 observability working required EIGHT bug fixes that mask each other.** Full diagnosis in [`LESSONS_LEARNED.md` §13–§18](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing). Quick summary:
+> ⚠️ **Getting native A365 observability rendered in the Activity UI required NINE bug fixes that mask each other.** Full diagnosis in [`LESSONS_LEARNED.md` §13–§20](LESSONS_LEARNED.md#13-aadsts65001-on-agent365observabilityotelwrite-despite-a-grant-existing). Quick summary:
 >
 > 1. **Consent grant has a leading space** in `scope` — `user_fic` token exchange fails `AADSTS65001`. PATCH via Graph. (§13)
 > 2. **`gen_ai.operation.name` allowlist** — must be `"chat"`, not the spec-correct `"responses"`. SDK filters everything else out silently. (§14 Bug 2)
 > 3. **`token_resolver` must be sync `def`**, not `async def`. SDK type hint says `Awaitable` but call site doesn't `await`. Async resolver → bearer becomes `<coroutine …>` → server `HTTP 400 EndpointInvalid: Tenant id  is invalid` (note the double space). (§14 Bug 3)
 > 4. **Logging visibility** — set `OBSERVABILITY_DEBUG=true` AND lower root logger + every handler to DEBUG. Otherwise the exporter's success-path DEBUG logs are swallowed by `basicConfig(INFO)`. (§14 Bug 4)
-> 5. **Activity UI requires structured scopes**, not plain OTel spans. Wrap every turn in `InvokeAgentScope` + `InferenceScope` + `OutputScope` from the A365 SDK with the full ~14 required attributes each. Plain spans ingest at 200 OK but never render. (§15)
+> 5. **Activity UI requires structured scopes**, not plain OTel spans. Wrap every turn in `InvokeAgentScope` + `InferenceScope` + `OutputScope` from the A365 SDK with the full required attributes each. Plain spans ingest at 200 OK but never render. (§15)
 > 6. **Two separate env-var gates** — `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (gates the exporter) AND `ENABLE_A365_OBSERVABILITY=true` (gates whether scopes create spans at all). Setting only the first looks like everything works but nothing exports. (§16)
 > 7. **`AgentDetails.agent_id` must be the agentic-user id** (`fc3ad290-…` from `context.activity.recipient.agentic_app_id`), NOT the blueprint id. Same `Tenant id  is invalid` error as Bug 3, but rooted in a wrong agent_id rather than a wrong bearer. (§17)
 > 8. **`Response.__init__()`** takes `messages`, not `content`. (§18)
+> 9. **Four required InvokeAgentScope attributes the SDK won't auto-fill** — `microsoft.agent.user.id` (= `agentic_user_id`), `microsoft.agent.user.email` (synthesise — not in env), `client.address` (must be a valid IP — `127.0.0.1` works), and `gen_ai.output.messages` on the parent span (call `invoke_scope.record_response(output)` before exiting the `with`). Server returns HTTP 200 / `rejectedSpans:0` either way; the rendering pipeline silently drops anything missing these post-ingest. (§20)
 >
 > **Diagnostic mode:** set `OBSERVABILITY_DEBUG=true` in `.env`. The agent will then:
 >

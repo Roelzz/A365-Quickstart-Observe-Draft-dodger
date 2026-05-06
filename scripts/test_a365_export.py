@@ -85,6 +85,9 @@ agent_details = AgentDetails(
     agent_id=AGENT_ID,
     agent_name="Draft Dodger",
     agent_description="Email risk advisor",
+    agentic_user_id=AGENT_ID,
+    agentic_user_email=os.getenv("AGENT365OBSERVABILITY__AGENTICUSEREMAIL")
+    or f"agent-{AGENT_ID}@agent365.local",
     agent_blueprint_id=os.getenv("AGENT365OBSERVABILITY__AGENTBLUEPRINTID") or AGENT_ID,
     tenant_id=TENANT_ID,
     provider_name="azure-openai",
@@ -94,6 +97,7 @@ caller_details = CallerDetails(
         user_id="test-user",
         user_name="Test User",
         user_email="test-user@contoso.com",
+        user_client_ip="127.0.0.1",
     ),
 )
 test_message = "Hi Bob, just circling back since I haven't heard anything in 6 days. Per my last email, the deadline was Friday."
@@ -105,7 +109,7 @@ request = Request(
 )
 scope_details = InvokeAgentScopeDetails(endpoint=ServiceEndpoint(hostname="localhost", port=3978))
 
-with InvokeAgentScope.start(request, scope_details, agent_details, caller_details):
+with InvokeAgentScope.start(request, scope_details, agent_details, caller_details) as invoke_scope:
     inference_details = InferenceCallDetails(
         operationName=InferenceOperationType.CHAT,
         model=os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-nano"),
@@ -120,6 +124,10 @@ with InvokeAgentScope.start(request, scope_details, agent_details, caller_detail
         inference.record_input_tokens(42)
         inference.record_output_tokens(21)
         inference.record_output_messages([synthetic_output])
+
+    # Required for Activity-tab rendering: `gen_ai.output.messages` must be
+    # present on the InvokeAgentScope parent span.
+    invoke_scope.record_response(synthetic_output)
 
     with OutputScope.start(request, Response(messages=synthetic_output), agent_details):
         pass

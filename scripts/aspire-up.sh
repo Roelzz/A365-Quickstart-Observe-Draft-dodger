@@ -30,11 +30,15 @@ fi
 $RUNTIME rm -f aspire-dashboard >/dev/null 2>&1 || true
 
 echo "Starting Aspire Dashboard via $RUNTIME..."
+# DASHBOARD__FRONTEND__AUTHMODE=Unsecured skips the one-time login token on the
+# UI (http://localhost:18888 opens straight into Traces). Only safe because the
+# port is bound to localhost — never expose this container to a network.
 $RUNTIME run --rm -d \
   --name aspire-dashboard \
   -p 18888:18888 \
   -p 4317:18889 \
   -e DASHBOARD__OTLP__AUTHMODE=Unsecured \
+  -e DASHBOARD__FRONTEND__AUTHMODE=Unsecured \
   mcr.microsoft.com/dotnet/aspire-dashboard:latest
 
 echo ""

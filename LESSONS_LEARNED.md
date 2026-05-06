@@ -430,7 +430,30 @@ A365 native ingest works (HTTP 200, `rejectedSpans:0`), but **none of the obviou
 
 ---
 
-## 20. Demo-day operations
+## 20. Server accepts spans with HTTP 200 + `rejectedSpans:0` but the Activity tab stays empty — four required attributes the SDK *won't auto-fill*
+
+**Symptom.** `agent365.svc.cloud.microsoft` returns HTTP 200 with `partialSuccess.rejectedSpans:0` per export — server-side acceptance is clean — but `admin.cloud.microsoft → Agents → <agent> → Activity` keeps saying "Nothing to show for the selected period." The console mirror confirms all the obvious schema fields are set (`microsoft.tenant.id`, `gen_ai.agent.id`, `gen_ai.agent.name`, `microsoft.a365.agent.blueprint.id`, etc.).
+
+**Root cause.** `learn.microsoft.com/en-us/microsoft-agent-365/developer/observability` (snapshot 2026-05-01) lists **16 required attributes** for `InvokeAgentScope`. Four are not set automatically by passing `AgentDetails(...)` and `CallerDetails(...)` with the obvious fields — they need explicit kwargs the SDK exposes but doesn't default:
+
+| Required attribute | SDK source | What we missed |
+|---|---|---|
+| `microsoft.agent.user.id` | `AgentDetails.agentic_user_id` | Distinct from `agent_id` despite both being the same UUID — must be passed twice. (`opentelemetry_scope.py:183`) |
+| `microsoft.agent.user.email` | `AgentDetails.agentic_user_email` | Not in `.env`, not in the inbound activity. Synthesise (e.g. `agent-<agentic_user_id>@agent365.local`) until Microsoft surfaces a real UPN. (`opentelemetry_scope.py:184`) |
+| `client.address` | `UserDetails.user_client_ip` | Must be a *valid IP* — `validate_and_normalize_ip` (`utils.py:248`) drops anything that doesn't parse as IPv4/IPv6. Bot Framework activities don't carry the user's IP, so use `127.0.0.1` — truthful for dev-tunnel topology, satisfies the validator. (`invoke_agent_scope.py:148-150`) |
+| `gen_ai.output.messages` (on the parent `InvokeAgentScope`) | `invoke_scope.record_response(output_text)` | `record_output_messages` on `InferenceScope` only sets it on the inference span — the parent stays empty. Capture with `as invoke_scope:` and call `record_response(...)` after the inner work returns. (`invoke_agent_scope.py:177-183`) |
+
+**Why the server accepts and then silently filters.** Same docs page, troubleshooting section: *"The system silently drops spans and never exports them."* That's about the client-side filter, but the same silent-drop pattern applies server-side once the rendering pipeline starts validating against the full schema — the OTLP receiver answers HTTP 200 once the protobuf payload is well-formed; the rendering layer applies its own conformance check downstream and quietly drops anything missing required fields.
+
+**How to verify before/after.** Run `OBSERVABILITY_DEBUG=true uv run python scripts/test_a365_export.py 2>&1 | awk "/Span ended: 'invoke_agent/,/^}\$/"` and grep the attributes block for the four field names. If any are absent, the rendering pipeline will reject the span post-ingest with no client-visible error.
+
+**Other gotchas, observed.**
+- `admin.cloud.microsoft → Agents → <agent> → Activity` is **not** the same surface as the user-level Activity tab in Teams (`learn.microsoft.com/en-us/microsoft-agent-365/observe`). The user-level tab requires the viewer to be assigned as the **agent manager in Microsoft Entra**: *"Non-managers can't see the agent's activity."* The admin-centre surface is a third view that overlays both and may also depend on the Defender for Cloud Apps + Purview AI Observability data path being licensed.
+- Microsoft's docs for the Activity tab specify *"Activity metrics are currently supported for Microsoft 365 Copilot Agent Builder, SharePoint, and Microsoft 365 Agents Toolkit agent types."* Custom Python A365 SDK agents are not in this allowlist — the schema-fix above is necessary but might not be sufficient. If the Aspire mirror is the only surface that lights up after the schema fix, that's still useful evidence to escalate to Microsoft.
+
+---
+
+## 21. Demo-day operations
 
 - **The agent's stdout is your demo's best evidence.** Every M365 Copilot turn produces:
   - `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...` — proves the HTTP request landed
