@@ -2,6 +2,8 @@
 
 Reproducible runbook to take this repo, point it at **your own** Microsoft 365 tenant + Azure AI Foundry deployment, and end up with a working "Draft Dodger" agent in Microsoft 365 Copilot.
 
+> 🚀 **Faster path with Claude Code:** open this repo in Claude Code and run **`/draft-dodger-setup`**. The bundled project-local skill ([`.claude/skills/draft-dodger-setup/SKILL.md`](.claude/skills/draft-dodger-setup/SKILL.md)) drives every step in this document interactively, surfaces device codes when needed, and applies the known workarounds (CLI 1.1.174 `--m365` flag, Bot Framework onboarding patience). The manual instructions below are the fallback or for readers who don't use Claude Code.
+
 > If you're recovering an existing setup or just need restart procedures, skip to [§13 Operations](#13-operations--day-to-day).
 
 ## Documentation map
@@ -11,6 +13,7 @@ Reproducible runbook to take this repo, point it at **your own** Microsoft 365 t
 | [`README.md`](README.md) | Project overview, architecture diagrams, demo-day operations |
 | **`SETUP.md` (this file)** | Step-by-step fresh-tenant deployment |
 | [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md) | Every error we hit + the fix. Read this first when something breaks. |
+| [`.claude/skills/draft-dodger-setup/SKILL.md`](.claude/skills/draft-dodger-setup/SKILL.md) | Claude Code skill — interactive bootstrap (recommended) |
 | [`plans/phase-1-scaffold.md`](plans/phase-1-scaffold.md) | Original scaffolding decisions |
 | [`plans/phase-2-registration-and-observability.md`](plans/phase-2-registration-and-observability.md) | Phase 2 design notes |
 
