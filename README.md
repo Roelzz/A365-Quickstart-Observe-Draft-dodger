@@ -1,12 +1,19 @@
-# Draft Dodger
+# Draft Dodger — Agent 365 Quickstart Template
 
-> Email risk advisor. Analyses draft emails before you send them, scores them on passive aggression / emotional temperature / formality match, flags risky phrases with rewrites, and returns a verdict — **SEND**, **TONE DOWN**, or **DELETE AND WALK AWAY** — with a confidence score.
+> A reusable Microsoft Agent 365 quickstart. Demonstrates how to register a **locally-running** Python agent with **Microsoft 365 Copilot** via a persistent **DevTunnel** — no Azure Container Apps, no production deployment, just your laptop. Ships with **Draft Dodger** (an email tone advisor) as the example agent so you can see the full path from clone to working-in-Copilot end-to-end.
 
-A Microsoft Agent 365 demo agent. Python, Microsoft Agents SDK, Azure AI Foundry (gpt-5.4-nano on the Responses API). Exposed to Microsoft 365 Copilot via a persistent Microsoft DevTunnel — runs on your laptop, available everywhere.
+**What you get from this repo:**
 
-> 🚀 **Forked this repo or moved it to a new machine?** Open Claude Code in the project root and run **`/draft-dodger-setup`** — the bundled project-local skill walks through prereq checks, app registration, dev tunnel, blueprint, publish, admin upload, and Copilot activation. Everything is interactive and asks for your tenant info as needed.
+- A working A365 agent (Draft Dodger) you can fork as a starting point.
+- A documented blueprint-registration flow (Entra app + Graph permissions + a365 CLI + manifest publish + admin upload + activation).
+- A DevTunnel-based local-runtime pattern so the agent stays on your laptop while M365 Copilot reaches it.
+- Microsoft Agent 365 observability wired with OpenTelemetry semantic conventions, falling back to console output for local demos.
+- A project-local Claude Code skill that automates the entire bootstrap.
+- A complete `LESSONS_LEARNED.md` covering every SDK quirk, CLI version mismatch, auth audience pitfall, and Bot Framework onboarding storm we hit so you don't have to rediscover them.
+
+> 🚀 **Forked this repo, or moved it to a new machine?** Open Claude Code in the project root and run **`/draft-dodger-setup`** — the bundled project-local skill walks through prereq checks, app registration, dev tunnel, blueprint, publish, admin upload, and Copilot activation. Everything is interactive and asks for your tenant info as needed.
 >
-> Prefer to do it manually? Follow [`SETUP.md`](SETUP.md) instead — same flow, but you drive the commands.
+> Prefer to do it manually? Follow [`SETUP.md`](SETUP.md) instead — same flow, you drive the commands.
 
 ## Documentation map
 
@@ -21,9 +28,19 @@ A Microsoft Agent 365 demo agent. Python, Microsoft Agents SDK, Azure AI Foundry
 
 ---
 
-## What it does
+## What this repo demonstrates
 
-Send the agent a draft email. It returns:
+Three things, in priority order:
+
+1. **A365 blueprint registration for a locally-hosted agent.** The flow: register an Entra app with the right Microsoft Graph permissions, create a persistent DevTunnel, point an A365 blueprint's messaging endpoint at the tunnel URL, publish the manifest, upload it via the M365 admin center, activate, and use the agent from M365 Copilot — all while the agent runtime lives on your laptop.
+2. **A working pattern against Azure AI Foundry's Responses API.** With the right SDK choice, auth audience, and request shape against the `/openai/v1/responses` Foundry projects path — including the workarounds for the bugs in `agent_framework`'s built-in clients.
+3. **Microsoft Agent 365 observability with OpenTelemetry.** Each turn emits a single span with `gen_ai.*` semantic attributes (model, token counts, response size); the SDK auto-falls-back to a console exporter so spans show up in your terminal even without a backend.
+
+Forking this repo gives you the full setup pattern with a working example you can iteratively replace with your own agent persona.
+
+## The example agent (Draft Dodger)
+
+The agent shipped with this repo analyses **draft emails before they're sent** and returns:
 
 - **Three scores (1–10):** Passive Aggression, Emotional Temperature, Formality Match.
 - **Flagged phrases**, each with a one-line "why this is risky" + a per-phrase rewrite.
@@ -34,7 +51,7 @@ Send the agent a draft email. It returns:
 - **A confidence percentage.**
 - Optionally, a full clean rewrite of the email.
 
-Tone of the agent itself: direct, dry, on the user's side. Never moralizes, never lectures.
+Tone of the agent itself: direct, dry, on the user's side. Never moralizes, never lectures. The full system prompt lives in [`agent.py:AGENT_PROMPT`](agent.py); swap it out to make a different agent (note the prompt is structurally tied to email-tone analysis — replacing it produces a different agent).
 
 ---
 
@@ -276,18 +293,28 @@ If a test user can't find it, check **Microsoft 365 admin center → Agents → 
 
 ---
 
-## Verified runtime data
+## Running it locally (after first-time setup)
 
-Two real M365 Copilot turns observed end-to-end during the demo:
+Once you've completed the bootstrap (either via `/draft-dodger-setup` or the manual `SETUP.md` flow), the agent is registered with A365 against your DevTunnel URL and the manifest is uploaded in the M365 admin center. Day-to-day, you only need two long-running processes:
 
-| # | Time (UTC) | Duration | Draft size | Input tokens | Output tokens | Reply size |
-|---|---|---|---|---|---|---|
-| 1 | 2026-05-06 08:15:58 | 13.4s | 383 chars | 639 | 315 | 1323 chars |
-| 2 | 2026-05-06 08:18:14 | 8.5s | **5677 chars** | 1025 | 187 | 767 chars |
+```bash
+# Terminal 1 — DevTunnel host (must be running for M365 Copilot to reach the agent)
+devtunnel host <your-tunnel-name>
 
-Span attributes captured per turn: `service.name=draft-dodger`, `gen_ai.system=azure_openai`, `gen_ai.operation.name=responses`, `gen_ai.request.model=gpt-5.4-nano`, plus `gen_ai.agent.id` and `microsoft.tenant.id`. Turn 2's 5677-char input was a real-world-sized email draft.
+# Terminal 2 — Agent runtime (aiohttp on :3978)
+uv run python start_with_generic_host.py
 
-These spans come from the manual OTel instrumentation in `agent.py:process_user_message` — the auto-instrumentor (`opentelemetry-instrumentation-openai-v2`) doesn't yet cover the Responses API. Details in [`LESSONS_LEARNED.md` §11](LESSONS_LEARNED.md#11-openai-otel-auto-instrumentation-gap-responses-api).
+# (optional) Terminal 3 — sanity check
+curl http://localhost:3978/api/health
+curl https://<your-tunnel>-3978.<region>.devtunnels.ms/api/health
+# both should return 200 + agent_initialized: true
+```
+
+Then open M365 Copilot → Agents → your agent and chat. The first message after a cold start can take 1–2 minutes (Bot Framework onboarding); subsequent turns are seconds.
+
+**Stop everything:** Ctrl-C in both terminals. The DevTunnel + blueprint registration persist — you don't need to redo any A365 setup, just restart the two processes next time you want to demo.
+
+For restart recipes (kill + start one-liners), live-traffic tail commands, and the `caffeinate -dimsu` anti-sleep trick, see [§ Demo-day operations](#demo-day-operations).
 
 ---
 
