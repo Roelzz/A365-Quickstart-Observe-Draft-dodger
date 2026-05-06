@@ -14,7 +14,7 @@
     "color": "color.png"
   },
   "accentColor": "#2ECC71",
-  "version": "1.0.0",
+  "version": "1.1.4",
   "manifestVersion": "devPreview",
   "developer": {
     "name": "Microsoft Corporation",
@@ -23,19 +23,9 @@
     "privacyUrl": "https://go.microsoft.com/fwlink/?LinkId=518028",
     "termsOfUseUrl": "https://shares.datatransfer.microsoft.com/assets/Microsoft_Terms_of_Use.html"
   },
-  "bots": [
-    {
-      "botId": "f4762823-0e5a-4603-b205-eff491673cb5",
-      "scopes": [
-        "personal"
-      ],
-      "supportsFiles": false,
-      "isNotificationOnly": false
-    }
-  ],
   "agenticUserTemplates": [
     {
-      "id": "951e33ab-ae49-459b-b2ab-92303b20b623",
+      "id": "7b0926a6-c4ee-445a-a913-bd054594bd09",
       "file": "agenticUserTemplateManifest.json"
     }
   ]
