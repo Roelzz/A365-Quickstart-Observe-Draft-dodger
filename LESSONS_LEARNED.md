@@ -489,7 +489,25 @@ Sample row, captured from `scripts/test_a365_export.py`'s synthetic turns:
 Three subtleties that mask this if you don't know to look:
 
 1. **The Activity tab and the audit log are different surfaces.** The Activity tab is a *metrics rollup* with its own ETL that today only supports Copilot Agent Builder / SharePoint / Agents Toolkit agent types (per `learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-details`). It will stay empty for `CustomBuiltAgentsUsingSDK` agents until Microsoft expands the rollup's agent-type coverage. The **audit log** has zero such restriction — every span we accept lands there.
-2. **Field positions vary by RecordType.** For `AIInferenceCall` (407) the agent ID is in the top-level `AgentId` field; for `AIInvokeAgent` (406) the `AgentId`/`AgentBlueprintId` fields are zeroed out and the actual agent lives in `TargetAgentId`/`TargetAgentBlueprintId`. A `Search-UnifiedAuditLog -RecordType AIInvokeAgent -ResultSize 100` query that's *ordered by date* may return 100 rows of *other* tenants' agents and hide yours past the cutoff. Use `-FreeText '<your-agent-guid>'` instead — it scans the full `AuditData` blob across both field positions.
+2. **Field positions vary by RecordType — `AIInvokeAgent` rows model a caller→target edge.** This is the single most confusing part of the schema. Look at any `AIInvokeAgent` (RecordType 406) row in the audit log:
+    - 🔴 `AgentId` / `AgentBlueprintId` = the **caller** (invoking agent). Zeros (`00000000-…`) for human-initiated turns because there *is* no caller agent — the human in `UserId` is the originator.
+    - 🟢 `TargetAgentId` / `TargetAgentBlueprintID` / `TargetAgentName` = the **invoked agent**. *This* is where Draft Dodger's real IDs live on InvokeAgent rows.
+
+    Other RecordTypes describe what one agent did (no edge), so Draft Dodger's IDs land in the top-level `AgentId` / `AgentBlueprintId`:
+
+    | RecordType | Numeric | Where Draft Dodger's IDs live |
+    |---|---|---|
+    | `AIInvokeAgent` | 406 | `TargetAgentId` / `TargetAgentBlueprintID` (top-level fields are caller, zero for human-initiated) |
+    | `AIInferenceCall` | 407 | `AgentId` / `AgentBlueprintId` |
+    | `AIExecuteTool` | 408 | `AgentId` / `AgentBlueprintId` |
+
+    Practical consequence: `Search-UnifiedAuditLog -RecordType AIInvokeAgent -ResultSize 100` is sorted by date and the field-position differs between RecordTypes — so a date-ordered RecordType-only query can return 100 rows of *other* tenants' agents (whose data also has zeros in `AgentId`) and hide your rows past the cutoff. Use `-FreeText '<your-agent-guid>'` instead — it scans the full `AuditData` JSON blob and matches both field positions. For dashboards, normalise to a single "effective" agent id per row:
+
+    ```jq
+    .RecordType as $rt
+    | (if $rt == "AIInvokeAgent" then .AuditData.TargetAgentId        else .AuditData.AgentId end) as $aid
+    | (if $rt == "AIInvokeAgent" then .AuditData.TargetAgentBlueprintID else .AuditData.AgentBlueprintId end) as $abp
+    ```
 3. **Latency is 30 min – 24 h** on the audit pipeline (consistent with Office 365 Management Activity API SLAs). Don't expect Aspire-style real-time. For real-time, use the Aspire mirror (§19).
 
 **Two ways to query.**

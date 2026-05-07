@@ -388,6 +388,19 @@ jq -r '.AuditData.Operation, .AuditData.CopilotEventData.ConversationId' audit-r
 jq 'select(.RecordType == "AIInvokeAgent") | .AuditData' audit-results/*.jsonl
 ```
 
+> ⚠️ **`AgentId` vs `TargetAgentId` — read this before reading the JSONL.** On `AIInvokeAgent` (RecordType 406) rows, `AuditData.AgentId` and `AuditData.AgentBlueprintId` are `00000000-…` even for our agent. That's the schema: those fields describe the **caller** (zero for human-initiated turns), and Draft Dodger's IDs live on `TargetAgentId` / `TargetAgentBlueprintID` instead. On `AIInferenceCall` (407) and `AIExecuteTool` (408), the IDs *are* in the top-level `AgentId` / `AgentBlueprintId`. To pull the right ID regardless of RecordType:
+>
+> ```bash
+> jq -r '
+>   .RecordType as $rt
+>   | (if $rt == "AIInvokeAgent" then .AuditData.TargetAgentId        else .AuditData.AgentId end)        as $aid
+>   | (if $rt == "AIInvokeAgent" then .AuditData.TargetAgentBlueprintID else .AuditData.AgentBlueprintId end) as $abp
+>   | "\(.CreationDate)\t\($rt)\t\($abp)\t\($aid)"
+> ' audit-results/*.jsonl
+> ```
+>
+> Full schema explanation in the [Microsoft Purview Audit log subsection](#microsoft-purview-audit-log-canonical-microsoft-cloud-surface) below and in [`LESSONS_LEARNED.md` §20](LESSONS_LEARNED.md).
+
 Override the directory with `OUTPUT_DIR=/tmp ./scripts/query-audit.sh ...`.
 
 Full Purview portal walkthrough (UI fields → exact values, sample audit row) lives in [Microsoft Purview Audit log](#microsoft-purview-audit-log-canonical-microsoft-cloud-surface).
@@ -589,6 +602,23 @@ If `False`, enable in https://purview.microsoft.com → **Audit** (banner: "Star
    - **Search name** — give it something memorable (e.g. `Draft Dodger demo`). Lets you re-open the same search from the **Searches completed** tab without re-filling the form.
 4. Click **Search**. The job goes into **Active searches** and takes ~3–5 min to complete (the audit search infrastructure is queue-based, not real-time).
 5. Once status is **Completed**, click the search → row table appears. Each row's **AuditData** column has the full JSON of the span (with `AgentName`, `AgentId`, `Operation`, `RequestId`, `ConversationId`, `PlatformAgentType`, `Workload`, etc.). For demos, click a row, copy the JSON, paste into a side window — that's the proof.
+
+> ⚠️ **Heads-up on `AgentId` vs `TargetAgentId`** — when you open an `AIInvokeAgent` (RecordType 406) row, the `AgentId` and `AgentBlueprintId` fields are `00000000-0000-0000-0000-000000000000` even though everything else (`AgentName`, `Workload`, `OrganizationId`, etc.) is correct. That's not a bug — it's the schema. `AIInvokeAgent` rows model an **invocation edge** (caller → target):
+>
+> | Field | Role | Value on a Draft Dodger turn |
+> |---|---|---|
+> | 🔴 `AgentId` / `AgentBlueprintId` | **Caller** — the *invoking* agent (in agent-to-agent scenarios) | Zero, because turns are initiated by humans (caller is `UserId: test-user@…`, not another agent) |
+> | 🟢 `TargetAgentId` / `TargetAgentBlueprintID` / `TargetAgentName` | **Target** — the agent being invoked | Real Draft Dodger IDs (`fc3ad290-…`, `f4762823-…`, "Draft Dodger") |
+>
+> Other RecordTypes describe what one agent *did* (no edge), so the agent's IDs land in top-level `AgentId` / `AgentBlueprintId` directly:
+>
+> | RecordType | Numeric | Where Draft Dodger's IDs live on the row |
+> |---|---|---|
+> | `AIInvokeAgent` | 406 | `TargetAgentId` / `TargetAgentBlueprintID` |
+> | `AIInferenceCall` | 407 | `AgentId` / `AgentBlueprintId` |
+> | `AIExecuteTool` | 408 | `AgentId` / `AgentBlueprintId` |
+>
+> Same convention applies to every Copilot Studio agent's rows in your tenant — it's the A365 audit-pipeline contract, not Draft-Dodger-specific. If you find yourself filtering only by `AgentId` and seeing zeros, switch to `TargetAgentId` (or just keyword-search the GUID — that scans both positions).
 
 A reference shot of the search form, with all the fields highlighted above:
 
