@@ -401,6 +401,35 @@ jq -r '.AuditData.Operation, .AuditData.CopilotEventData.ConversationId' audit-r
 jq 'select(.RecordType == "AIInvokeAgent") | .AuditData' audit-results/*.jsonl
 ```
 
+**Show ONLY the Draft Dodger (locally-hosted A365 SDK agent) traces** — strips out token-exchange rows, Copilot Studio noise, and other tenant chatter; gives you a chronological per-turn view:
+
+```bash
+# Run a search, then filter the JSONL down to just Draft Dodger trace records
+./scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 1
+LATEST=$(ls -t audit-results/*.jsonl | head -1)
+jq -r 'select(
+    (.RecordType == "AIInvokeAgent" or .RecordType == "AIInferenceCall" or .RecordType == "AIExecuteTool")
+    and (((.AuditData.AgentName // "") == "Draft Dodger") or ((.AuditData.TargetAgentName // "") == "Draft Dodger"))
+  )
+  | [.CreationDate, .RecordType,
+     (.AuditData.TargetAgentName // .AuditData.AgentName),
+     (.AuditData.TargetAgentId // .AuditData.AgentId),
+     (.AuditData.CopilotEventData.ConversationId // .AuditData.ConversationId // "")]
+  | @tsv' "$LATEST" | sort | column -t -s$'\t'
+```
+
+Sample output:
+
+```
+2026-05-06T10:58:38  AIInvokeAgent    Draft Dodger  fc3ad290-…  test-conversation-4032febb-…
+2026-05-06T10:58:38  AIInferenceCall  Draft Dodger  fc3ad290-…  test-conversation-4032febb-…
+2026-05-06T11:31:23  AIInvokeAgent    Draft Dodger  fc3ad290-…  test-conversation-d358d228-…
+2026-05-06T11:31:23  AIInferenceCall  Draft Dodger  fc3ad290-…  test-conversation-d358d228-…
+…
+```
+
+Each turn produces an `AIInvokeAgent` + `AIInferenceCall` pair (Draft Dodger doesn't use tools, so no `AIExecuteTool`). The filter relies on `AgentName == "Draft Dodger"` matching `AuditData.AgentName` for `AIInferenceCall` rows and `AuditData.TargetAgentName` for `AIInvokeAgent` rows — handles both field positions cleanly. To inspect the full `AuditData` JSON of any single matching row, drop the `[…] | @tsv` projection and replace the closing pipe with `| .AuditData` instead.
+
 > ⚠️ **`AgentId` vs `TargetAgentId` — read this before reading the JSONL.** On `AIInvokeAgent` (RecordType 406) rows, `AuditData.AgentId` and `AuditData.AgentBlueprintId` are `00000000-…` even for our agent. That's the schema: those fields describe the **caller** (zero for human-initiated turns), and Draft Dodger's IDs live on `TargetAgentId` / `TargetAgentBlueprintID` instead. On `AIInferenceCall` (407) and `AIExecuteTool` (408), the IDs *are* in the top-level `AgentId` / `AgentBlueprintId`. To pull the right ID regardless of RecordType:
 >
 > ```bash

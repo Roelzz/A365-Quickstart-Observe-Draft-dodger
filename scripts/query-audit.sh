@@ -24,6 +24,21 @@
 #   scripts/query-audit.sh "Draft Dodger" 7                      # 7-day search by name
 #   scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 3  # 3-day search by GUID
 #   OUTPUT_DIR=/tmp scripts/query-audit.sh                       # custom output directory
+#
+# Show ONLY Draft Dodger (locally-hosted A365 SDK agent) trace records,
+# chronological — strips out token-exchange / Copilot Studio / other-tenant
+# rows from the JSONL the script just wrote:
+#
+#   LATEST=$(ls -t audit-results/*.jsonl | head -1)
+#   jq -r 'select(
+#       (.RecordType == "AIInvokeAgent" or .RecordType == "AIInferenceCall" or .RecordType == "AIExecuteTool")
+#       and (((.AuditData.AgentName // "") == "Draft Dodger") or ((.AuditData.TargetAgentName // "") == "Draft Dodger"))
+#     )
+#     | [.CreationDate, .RecordType,
+#        (.AuditData.TargetAgentName // .AuditData.AgentName),
+#        (.AuditData.TargetAgentId // .AuditData.AgentId),
+#        (.AuditData.CopilotEventData.ConversationId // .AuditData.ConversationId // "")]
+#     | @tsv' "$LATEST" | sort | column -t -s$'\t'
 
 set -euo pipefail
 
