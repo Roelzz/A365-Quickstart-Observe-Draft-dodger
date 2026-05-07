@@ -47,3 +47,6 @@ manifest/*.zip
 
 # MOS token
 /tmp/mos_token.txt
+
+# Purview Audit query results (per-run JSONL dumps from scripts/query-audit.sh — contain tenant + agent telemetry)
+audit-results/

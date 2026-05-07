@@ -379,7 +379,16 @@ Auto-detects podman or docker, boots `mcr.microsoft.com/dotnet/aspire-dashboard:
 ./scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 3
 ```
 
-First run prints a `https://login.microsoft.com/device` URL + code — sign in once. Every subsequent run reuses the persistent `pwsh + Connect-ExchangeOnline` background session: zero prompts until laptop sleep / `pkill -f eo_loop`. Output: row count, per-`RecordType` breakdown, the first 10 rows in a table, and a sample `AuditData` JSON. Latency is 30 min – 24 h after the turn.
+First run prints a `https://login.microsoft.com/device` URL + code — sign in once. Every subsequent run reuses the persistent `pwsh + Connect-ExchangeOnline` background session: zero prompts until laptop sleep / `pkill -f eo_loop`. Console output: row count, per-`RecordType` breakdown, the first 10 rows in a table, and a sample `AuditData` JSON. Latency is 30 min – 24 h after the turn.
+
+Every run also dumps every returned row as **JSONL** to `./audit-results/<UTC-stamp>-<query>.jsonl` (gitignored — contains tenant + agent telemetry). Each line is one event with the PowerShell row envelope plus the parsed `AuditData` inline at `.AuditData`, so `jq` works directly:
+
+```bash
+jq -r '.AuditData.Operation, .AuditData.CopilotEventData.ConversationId' audit-results/*-fc3ad290.jsonl
+jq 'select(.RecordType == "AIInvokeAgent") | .AuditData' audit-results/*.jsonl
+```
+
+Override the directory with `OUTPUT_DIR=/tmp ./scripts/query-audit.sh ...`.
 
 Full Purview portal walkthrough (UI fields → exact values, sample audit row) lives in [Microsoft Purview Audit log](#microsoft-purview-audit-log-canonical-microsoft-cloud-surface).
 

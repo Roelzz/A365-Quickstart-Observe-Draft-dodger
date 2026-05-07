@@ -13,10 +13,17 @@
 # every subsequent invocation skips auth entirely (until reboot or
 # pkill -f eo_loop).
 #
+# Every row returned by Search-UnifiedAuditLog is also persisted to a
+# JSONL file under ./audit-results/ (override with OUTPUT_DIR=...)
+# named "<UTC-stamp>-<sanitised-query>.jsonl". Each line is one JSON
+# object with the PowerShell row envelope plus the AuditData JSON
+# parsed inline at "AuditData", so you can grep/jq directly.
+#
 # Usage:
 #   scripts/query-audit.sh                                       # last 1d, default GUID
 #   scripts/query-audit.sh "Draft Dodger" 7                      # 7-day search by name
 #   scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 3  # 3-day search by GUID
+#   OUTPUT_DIR=/tmp scripts/query-audit.sh                       # custom output directory
 
 set -euo pipefail
 
@@ -27,6 +34,11 @@ QUERY_FILE=/tmp/eo_query.ps1
 SIGNAL_FILE=/tmp/eo_signal
 QUERY="${1:-fc3ad290-1d0e-491e-aca7-d09fc89ad656}"
 DAYS="${2:-1}"
+OUTPUT_DIR="${OUTPUT_DIR:-$(pwd)/audit-results}"
+mkdir -p "$OUTPUT_DIR"
+TS=$(date +%Y%m%d-%H%M%S)
+SAFE_QUERY=$(printf '%s' "$QUERY" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-40)
+OUT_PATH="$OUTPUT_DIR/$TS-$SAFE_QUERY.jsonl"
 
 start_session() {
     cat > "$LOOP_SCRIPT" <<'PWSH'
@@ -77,14 +89,33 @@ fi
 cat > "$QUERY_FILE" <<EOF
 \$q = '$QUERY'
 \$d = $DAYS
+\$outPath = '$OUT_PATH'
 Write-Host ("Audit search: '" + \$q + "', last " + \$d + " day(s)")
-\$r = Search-UnifiedAuditLog -StartDate (Get-Date).AddDays(-\$d) -EndDate (Get-Date) -FreeText \$q -ResultSize 100
+\$r = Search-UnifiedAuditLog -StartDate (Get-Date).AddDays(-\$d) -EndDate (Get-Date) -FreeText \$q -ResultSize 5000
 Write-Host ("rows: " + \$r.Count)
 if (\$r.Count -gt 0) {
     \$r | Group-Object RecordType | Sort-Object Count -Descending | Format-Table Name, Count -AutoSize | Out-String | Write-Host
     \$r | Select-Object -First 10 | Format-Table CreationDate, RecordType, Operations, UserIds -AutoSize | Out-String | Write-Host
     Write-Host '--- Sample AuditData (first row) ---'
     \$r | Select-Object -First 1 | ForEach-Object { Write-Host \$_.AuditData }
+
+    # Persist every row to a JSONL file: PowerShell envelope + parsed AuditData inline
+    \$lines = \$r | ForEach-Object {
+        \$parsed = \$null
+        if (\$_.AuditData) { try { \$parsed = \$_.AuditData | ConvertFrom-Json } catch { \$parsed = \$_.AuditData } }
+        [pscustomobject]@{
+            CreationDate = \$_.CreationDate
+            RecordType   = \$_.RecordType.ToString()
+            Operations   = \$_.Operations
+            UserIds      = \$_.UserIds
+            ResultIndex  = \$_.ResultIndex
+            ResultCount  = \$_.ResultCount
+            Identity     = \$_.Identity
+            AuditData    = \$parsed
+        } | ConvertTo-Json -Depth 12 -Compress
+    }
+    \$lines | Out-File -Encoding utf8 \$outPath
+    Write-Host ('Wrote ' + \$r.Count + ' rows to ' + \$outPath)
 }
 EOF
 
