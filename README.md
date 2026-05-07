@@ -161,18 +161,18 @@ sequenceDiagram
     participant H as host_agent_server.py
     participant A as DraftDodgerAgent
     participant F as Foundry<br/>Responses API
-    participant T as A365 SDK<br/>(InvokeAgent / Inference / Output<br/>+ Aspire OTLP mirror)
+    participant T as A365 SDK<br/>InvokeAgent + Inference + Output<br/>+ Aspire OTLP mirror
 
     U->>BF: send draft email
-    BF->>DT: POST https://&lt;tunnel&gt;/api/messages<br/>JWT signed activity
+    BF->>DT: POST tunnel-url + /api/messages<br/>JWT signed activity
     DT->>H: POST /api/messages
     H->>H: validate JWT (AGENTIC handler)
     H->>A: process_user_message(draft, auth, ctx)
     A->>T: InvokeAgentScope.start(request, agent_details, caller_details)
-    A->>T: InferenceScope.start(...)  (child)
-    A->>F: AsyncOpenAI.responses.create(<br/>  model=gpt-5.4-nano,<br/>  instructions=AGENT_PROMPT,<br/>  input=draft)
+    A->>T: InferenceScope.start(...) child
+    A->>F: AsyncOpenAI.responses.create(<br/>model=gpt-5.4-nano,<br/>instructions=AGENT_PROMPT,<br/>input=draft)
     F-->>A: response.output_text + usage tokens
-    A->>T: inference.record_input/output_tokens(...)
+    A->>T: inference.record_input_tokens + record_output_tokens
     A->>T: invoke_scope.record_response(output)
     A->>T: OutputScope.start(request, response, agent_details)
     A-->>H: verdict text
@@ -180,7 +180,7 @@ sequenceDiagram
     H->>BF: typing indicator
     H->>BF: POST reply activity (final)
     BF->>U: render verdict in Copilot UI
-    T-->>T: (background) export spans to A365 ingest + Aspire OTLP + console
+    T-->>T: background export to A365 ingest + Aspire OTLP + console
 ```
 
 Each successful turn produces:
