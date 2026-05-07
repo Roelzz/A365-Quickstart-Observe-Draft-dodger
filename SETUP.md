@@ -349,15 +349,23 @@ A365 doesn't need any reconfiguration; the tunnel URL is the same.
 This is the recipe for "is this *really* running on your laptop?" demos. Tail the agent's stdout/stderr; every M365 Copilot turn produces:
 
 - One access log line: `INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...`
-- One multi-line JSON span block with `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, etc. — proof of the actual Foundry call.
+- The three A365 SDK structured spans (`invoke_agent Draft Dodger` → `Chat <model>` → `output_messages …`) wrapping the Foundry call.
+- An `HTTP 200 success on attempt 1. … "partialSuccess":{"rejectedSpans":0}` line confirming Microsoft accepted them at `agent365.svc.cloud.microsoft`.
 
-If you started the agent in the foreground (Phase 1 / Phase 2E style), just point at that terminal. If you started it as a background task, find the log file and tail it:
+The agent writes everything to **stdout**, not a file. To both watch it in the launching terminal *and* tail-grep it from a side terminal, capture stdout with `tee` when you launch:
 
 ```bash
-# Filter for the lines that matter, with line-buffered grep so they appear in real time
-tail -f <agent-log-file> \
-  | grep --line-buffered -E "POST /api/messages|draft_dodger\.analyse|gen_ai\.(request|usage|response)"
+# Terminal 2 — launch with stdout mirrored to /tmp/draft-dodger.log
+uv run python start_with_generic_host.py 2>&1 | tee /tmp/draft-dodger.log
 ```
+
+```bash
+# Side terminal — follow the demo-relevant lines
+tail -f /tmp/draft-dodger.log \
+  | grep --line-buffered -E 'POST /api/messages|Span (started|ended)|HTTP 200 success|rejectedSpans|OTLP mirror'
+```
+
+> Don't copy snippets that include literal angle-bracket placeholders like `<agent-log-file>` — `zsh` parses `<file` as a redirection operator and aborts with `parse error near '|'`. Use the literal `/tmp/draft-dodger.log` path above.
 
 For Claude-launched background tasks the log is at `/private/tmp/claude-*` — find it with:
 
@@ -367,10 +375,10 @@ ls -t /private/tmp/claude-*/tasks/*.output | head -3
 
 #### Pretty-print spans for a polished demo
 
-The default console exporter prints span JSON across many lines. To pretty-print, pipe through Python:
+The console mirror (enabled with `OBSERVABILITY_DEBUG=true`) prints each span as a multi-line JSON block. To collapse those to a one-line per-turn summary, pipe through Python:
 
 ```bash
-tail -f <agent-log-file> \
+tail -f /tmp/draft-dodger.log \
   | python3 -c "
 import sys, json
 buf = []
@@ -379,9 +387,12 @@ for line in sys.stdin:
     if line.rstrip() == '}':
         try:
             obj = json.loads(''.join(buf))
-            if obj.get('name') == 'draft_dodger.analyse':
-                a = obj.get('attributes', {})
-                print(f\"📨 turn — model={a.get('gen_ai.request.model')} in={a.get('gen_ai.usage.input_tokens')}tok out={a.get('gen_ai.usage.output_tokens')}tok dur={a.get('gen_ai.response.output.length')}chars\")
+            name = obj.get('name', '')
+            a = obj.get('attributes', {})
+            if name == 'Chat ' + (a.get('gen_ai.request.model') or ''):
+                print(f\"📨 turn — model={a.get('gen_ai.request.model')} in={a.get('gen_ai.usage.input_tokens')}tok out={a.get('gen_ai.usage.output_tokens')}tok\")
+            elif name.startswith('invoke_agent '):
+                print(f\"🪝 invoke — agent={a.get('gen_ai.agent.name')} conv={a.get('gen_ai.conversation.id')}\")
         except: pass
         buf = []
 "

@@ -25,8 +25,12 @@ Two roles:
 2. Auto-instrument the OpenAI Python SDK (`OpenAIInstrumentor`) so that any
    `chat.completions` calls produce spans automatically. Note: as of
    `opentelemetry-instrumentation-openai-v2==2.4b0` this does NOT cover
-   the Responses API, so the agent also wraps `responses.create` in a
-   manual span (`draft_dodger.analyse`) in `agent.py`.
+   the Responses API, so the agent wraps every turn in the A365 SDK's
+   structured `InvokeAgentScope` → `InferenceScope` → `OutputScope`
+   triple in `agent.py`. Those scopes are what the Microsoft rendering
+   pipeline (Purview Audit, Defender CloudAppEvents) recognises — plain
+   `tracer.start_as_current_span(...)` spans get accepted at OTLP with
+   HTTP 200 but never surface in any Microsoft UI.
 """
 
 from __future__ import annotations

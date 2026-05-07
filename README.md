@@ -74,7 +74,7 @@ flowchart LR
     subgraph laptop["💻 Local laptop"]
         host["host_agent_server.py<br/>aiohttp on :3978<br/>/api/messages"]
         agent["agent.py<br/>DraftDodgerAgent"]
-        obs["observability.py<br/>OTel span: draft_dodger.analyse"]
+        obs["observability.py<br/>A365 SDK scopes:<br/>InvokeAgent → Inference → Output"]
         stdout["agent stdout<br/>(console exporter +<br/>access log)"]
     end
 
@@ -161,31 +161,35 @@ sequenceDiagram
     participant H as host_agent_server.py
     participant A as DraftDodgerAgent
     participant F as Foundry<br/>Responses API
-    participant T as OTel Tracer<br/>(console exporter)
+    participant T as A365 SDK<br/>(InvokeAgent / Inference / Output<br/>+ Aspire OTLP mirror)
 
     U->>BF: send draft email
     BF->>DT: POST https://&lt;tunnel&gt;/api/messages<br/>JWT signed activity
     DT->>H: POST /api/messages
     H->>H: validate JWT (AGENTIC handler)
     H->>A: process_user_message(draft, auth, ctx)
-    A->>T: start_as_current_span("draft_dodger.analyse")
+    A->>T: InvokeAgentScope.start(request, agent_details, caller_details)
+    A->>T: InferenceScope.start(...)  (child)
     A->>F: AsyncOpenAI.responses.create(<br/>  model=gpt-5.4-nano,<br/>  instructions=AGENT_PROMPT,<br/>  input=draft)
     F-->>A: response.output_text + usage tokens
-    A->>T: span.set_attribute(gen_ai.usage.*)
+    A->>T: inference.record_input/output_tokens(...)
+    A->>T: invoke_scope.record_response(output)
+    A->>T: OutputScope.start(request, response, agent_details)
     A-->>H: verdict text
     H-->>DT: 202 Accepted (immediate)
     H->>BF: typing indicator
     H->>BF: POST reply activity (final)
     BF->>U: render verdict in Copilot UI
-    T-->>T: (background) flush span to stdout / OTLP
+    T-->>T: (background) export spans to A365 ingest + Aspire OTLP + console
 ```
 
 Each successful turn produces:
 
 - One `INFO:aiohttp.access:... "POST /api/messages HTTP/1.1" 202 ...` line in the agent log.
-- One `draft_dodger.analyse` span with `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.output.length` attributes — pretty-printed by the console exporter.
+- Three structured A365 SDK spans — `invoke_agent Draft Dodger` → `Chat <model>` → `output_messages …` — each tagged with `gen_ai.*` and `microsoft.*` semantic attributes (model, tokens, conversation id, channel, agent id, blueprint id).
+- One `HTTP 200 success on attempt 1. … "partialSuccess":{"rejectedSpans":0}` line confirming Microsoft accepted the export at `agent365.svc.cloud.microsoft`.
 
-That makes the agent log **the** demo prop: see the [Demo-day operations](#demo-day-operations) section.
+That makes the agent log **the** real-time demo prop. The same three spans also surface in the [Aspire Dashboard](#aspire-dashboard-recommended-local-demo-surface) (live UI) and ~30 min – 24 h later in the [Microsoft Purview Audit log](#microsoft-purview-audit-log-canonical-microsoft-cloud-surface). See [Demo-day operations](#demo-day-operations).
 
 ---
 
@@ -342,26 +346,35 @@ Tunnel URL is unchanged. A365 doesn't need any reconfiguration.
 
 ### Watch live inbound traffic during a demo
 
+The agent writes everything to **stdout**, not a file — capture it with `tee` so you can both watch it in the launching terminal and tail-grep it from a side terminal.
+
 ```bash
-# Find the agent log file (e.g. wherever you started the agent)
-tail -f <agent-log-file> \
-  | grep --line-buffered -E "POST /api/messages|draft_dodger\.analyse|gen_ai\.(request|usage|response)"
+# Terminal 2 — launch the agent and mirror stdout/stderr to /tmp/draft-dodger.log
+uv run python start_with_generic_host.py 2>&1 | tee /tmp/draft-dodger.log
 ```
 
-Each successful Copilot turn shows up as:
+```bash
+# Terminal 4 (side window) — follow only the demo-relevant lines
+tail -f /tmp/draft-dodger.log \
+  | grep --line-buffered -E 'POST /api/messages|Span (started|ended)|HTTP 200 success|rejectedSpans|OTLP mirror'
+```
+
+⚠️ The placeholder shown in earlier versions (`<agent-log-file>`) trips zsh because `<file` is a redirection operator. Use the literal path above (or substitute your own real path), not angle-bracketed prose.
+
+Each successful Copilot turn produces one HTTP access line + the three A365 SDK structured spans (which is what now flows through both A365 native ingest and the Aspire OTLP mirror):
 
 ```
 INFO:aiohttp.access:127.0.0.1 [...] "POST /api/messages HTTP/1.1" 202 ...
-{
-    "name": "draft_dodger.analyse",
-    "attributes": {
-        "gen_ai.request.model": "gpt-5.4-nano",
-        "gen_ai.usage.input_tokens": 639,
-        "gen_ai.usage.output_tokens": 315,
-        ...
+INFO:microsoft_agents_a365.observability.core.opentelemetry_scope:Span started: 'invoke_agent Draft Dodger' (aa165d…)
+INFO:microsoft_agents_a365.observability.core.opentelemetry_scope:Span started: 'Chat gpt-5.4-nano' (2a3f2d…)
+INFO:microsoft_agents_a365.observability.core.opentelemetry_scope:Span ended:   'Chat gpt-5.4-nano'
+INFO:microsoft_agents_a365.observability.core.opentelemetry_scope:Span started: 'output_messages fc3ad290-…'
+INFO:microsoft_agents_a365.observability.core.opentelemetry_scope:Span ended:   'output_messages fc3ad290-…'
+INFO:microsoft_agents_a365.observability.core.opentelemetry_scope:Span ended:   'invoke_agent Draft Dodger'
+DEBUG:...exporters.agent365_exporter:HTTP 200 success on attempt 1. Correlation ID: …. Response: {"partialSuccess":{"rejectedSpans":0,"errorMessage":""}}
 ```
 
-For pretty-printed spans or an Aspire Dashboard UI view of every turn, see [Aspire Dashboard](#aspire-dashboard-recommended-local-demo-surface) below.
+If you want the full span JSON (token counts, message bodies) printed inline, set `OBSERVABILITY_DEBUG=true` in `.env` — that attaches a `ConsoleSpanExporter` mirror so every span pretty-prints right after `Span ended`. Otherwise, for pretty-printed spans or an Aspire Dashboard UI view of every turn, see [Aspire Dashboard](#aspire-dashboard-recommended-local-demo-surface) below.
 
 ### Start the Aspire dashboard (live trace UI)
 
@@ -521,19 +534,22 @@ To reproduce on a fresh tenant from scratch, follow [`SETUP.md`](SETUP.md) — o
 
 ## Observability
 
-Wired up in `observability.py` and called from `agent.py` at import time. Each call to `process_user_message` emits a single OpenTelemetry span named `draft_dodger.analyse` with `gen_ai.*` semantic attributes:
+Wired up in `observability.py` and called from `agent.py` at import time. Each call to `process_user_message` opens three nested A365 SDK structured scopes — `InvokeAgentScope` → `InferenceScope` → `OutputScope` — which are what the Microsoft cloud rendering pipeline (Purview Audit, Defender, Activity tab when supported) expects. Plain `tracer.start_as_current_span(...)` spans get accepted at the OTLP layer with HTTP 200 but never render in any Microsoft surface — see [`LESSONS_LEARNED.md` §15](LESSONS_LEARNED.md).
+
+Per-turn span tree, with attributes that land on each:
+
+| Span | Source | Required attributes (subset) |
+|---|---|---|
+| `invoke_agent Draft Dodger` (root, kind=CLIENT) | `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `gen_ai.agent.id`, `gen_ai.agent.name`, `microsoft.a365.agent.blueprint.id`, `microsoft.tenant.id`, `microsoft.agent.user.id`, `microsoft.agent.user.email`, `client.address`, `server.address`, `server.port`, `microsoft.channel.name`, `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `user.id`, `user.email` |
+| `Chat <model>` (child) | `InferenceScope.start(request, inference_details, agent_details)` then `record_input_tokens` / `record_output_tokens` / `record_output_messages` | `gen_ai.operation.name = "Chat"`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.provider.name` |
+| `output_messages <agentic-user-id>` (child) | `OutputScope.start(request, response, agent_details)` | echoes the parent's identity attributes; carries the response body |
+
+Resource-level (set once via `configure(service_name=..., service_namespace=...)`):
 
 | Attribute | Value |
 |---|---|
 | `service.name` | `draft-dodger` |
 | `service.namespace` | `a365.demo` |
-| `gen_ai.system` | `azure_openai` |
-| `gen_ai.operation.name` | `responses` |
-| `gen_ai.request.model` | the deployment name (e.g. `gpt-5.4-nano`) |
-| `gen_ai.request.input.length` | character count of the user draft |
-| `gen_ai.usage.input_tokens` | from the Responses API response |
-| `gen_ai.usage.output_tokens` | from the Responses API response |
-| `gen_ai.response.output.length` | character count of the agent reply |
 
 ### Where the spans go
 
