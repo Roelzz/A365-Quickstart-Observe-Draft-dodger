@@ -19,12 +19,40 @@
 
 | File | Purpose |
 |---|---|
-| **`README.md` (this file)** | Project overview, architecture, demo-day ops |
+| **`README.md` (this file)** | Project overview, install runbook, demo-day ops, observability deep-dive |
 | [`SETUP.md`](SETUP.md) | Fresh-tenant runbook from clone to working in Copilot |
 | [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md) | Every error we hit + the fix. Read this first when something breaks |
 | [`.claude/skills/draft-dodger-setup/SKILL.md`](.claude/skills/draft-dodger-setup/SKILL.md) | Project-local Claude skill — interactive bootstrap. Invoke with `/draft-dodger-setup`. |
 | [`plans/phase-1-scaffold.md`](plans/phase-1-scaffold.md) | Phase 1 design notes (initial scaffold) |
 | [`plans/phase-2-registration-and-observability.md`](plans/phase-2-registration-and-observability.md) | Phase 2 design notes (registration + tracing) |
+
+### Jump to (in this README)
+
+**Concepts**
+- [What this repo demonstrates](#what-this-repo-demonstrates)
+- [The example agent (Draft Dodger)](#the-example-agent-draft-dodger)
+- [Architecture — system context](#architecture--system-context)
+- [Auth model](#auth-model)
+- [Anatomy of one turn](#anatomy-of-one-turn)
+- [Why we bypass `agent_framework.ChatAgent`](#why-we-bypass-agent_frameworkchatagent)
+
+**Install + run**
+- [Setup at a glance](#setup-at-a-glance) — Phase 1 → Phase 2 → activation flowchart
+- [Quick start (local only — no A365)](#quick-start-local-only--no-a365) — Phase 1
+- [Phase 2 — A365 registration via DevTunnel](#phase-2--a365-registration-via-devtunnel)
+- [Where to find the agent (after publishing)](#where-to-find-the-agent-after-publishing)
+- [Running it locally (after first-time setup)](#running-it-locally-after-first-time-setup)
+
+**Operate**
+- [Demo-day operations](#demo-day-operations) — restart, watch live traffic, Aspire, query Purview Audit, synthetic spans
+- [Observability](#observability) — three concurrent exporters: Purview Audit, Aspire OTLP mirror, console
+
+**Reference**
+- [Environment variables](#environment-variables)
+- [Project layout](#project-layout)
+- [Troubleshooting](#troubleshooting)
+- [What's intentionally not here](#whats-intentionally-not-here)
+- [Versioning & dependencies](#versioning--dependencies)
 
 ---
 
@@ -282,6 +310,20 @@ uv run pytest tests/ -v
 ```
 
 For the full A365 + Copilot setup (DevTunnel, app registration, blueprint, publish, admin upload), see [`SETUP.md`](SETUP.md).
+
+---
+
+## Phase 2 — A365 registration via DevTunnel
+
+The agent runs locally on `:3978`, exposed via a persistent Microsoft DevTunnel. A365 has the tunnel URL registered as the agent's messaging endpoint instead of an Azure Container App URL.
+
+Per fork, you'll end up with:
+- **Tunnel:** `<your-tunnel>` → `https://<your-tunnel>-3978.<region>.devtunnels.ms` (anonymous, 30-day rolling expiration)
+- **Blueprint:** `<YOUR_BLUEPRINT_ID>` (registered, endpoint pointing at the tunnel)
+- **Custom client app:** `<YOUR_CLIENT_APP_ID>` (with all 6 Graph permissions + admin consent)
+- **Manifest:** `manifest/manifest.zip` uploaded via https://admin.microsoft.com → Agents (gitignored — generated per fork)
+
+To reproduce on a fresh tenant from scratch, follow [`SETUP.md`](SETUP.md) — or just run **`/draft-dodger-setup`** in Claude Code (the project-local skill bundled in `.claude/skills/`).
 
 ---
 
@@ -555,20 +597,6 @@ A365_Draft_Dodger/
     └── appPackage/
         └── manifest.json              # Teams app package manifest (v1.17)
 ```
-
----
-
-## Phase 2 — A365 registration via DevTunnel
-
-The agent runs locally on `:3978`, exposed via a persistent Microsoft DevTunnel. A365 has the tunnel URL registered as the agent's messaging endpoint instead of an Azure Container App URL.
-
-Per fork, you'll end up with:
-- **Tunnel:** `<your-tunnel>` → `https://<your-tunnel>-3978.<region>.devtunnels.ms` (anonymous, 30-day rolling expiration)
-- **Blueprint:** `<YOUR_BLUEPRINT_ID>` (registered, endpoint pointing at the tunnel)
-- **Custom client app:** `<YOUR_CLIENT_APP_ID>` (with all 6 Graph permissions + admin consent)
-- **Manifest:** `manifest/manifest.zip` uploaded via https://admin.microsoft.com → Agents (gitignored — generated per fork)
-
-To reproduce on a fresh tenant from scratch, follow [`SETUP.md`](SETUP.md) — or just run **`/draft-dodger-setup`** in Claude Code (the project-local skill bundled in `.claude/skills/`).
 
 ---
 
