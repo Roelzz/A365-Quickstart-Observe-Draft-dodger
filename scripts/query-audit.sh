@@ -27,12 +27,16 @@
 #
 # Show ONLY Draft Dodger (locally-hosted A365 SDK agent) trace records,
 # chronological — strips out token-exchange / Copilot Studio / other-tenant
-# rows from the JSONL the script just wrote:
+# rows from the JSONL the script just wrote. Match by agentic-user GUID
+# (not display name) since the running agent emits "Draft Dodger Identity"
+# from .env while scripts/test_a365_export.py hardcodes "Draft Dodger" —
+# same agent, two AgentName values; only the GUID is invariant.
 #
 #   LATEST=$(ls -t audit-results/*.jsonl | head -1)
-#   jq -r 'select(
+#   AGENT_GUID=fc3ad290-1d0e-491e-aca7-d09fc89ad656  # AGENT365OBSERVABILITY__AGENTID
+#   jq -r --arg AGUID "$AGENT_GUID" 'select(
 #       (.RecordType == "AIInvokeAgent" or .RecordType == "AIInferenceCall" or .RecordType == "AIExecuteTool")
-#       and (((.AuditData.AgentName // "") == "Draft Dodger") or ((.AuditData.TargetAgentName // "") == "Draft Dodger"))
+#       and (((.AuditData.AgentId // "") == $AGUID) or ((.AuditData.TargetAgentId // "") == $AGUID))
 #     )
 #     | [.CreationDate, .RecordType,
 #        (.AuditData.TargetAgentName // .AuditData.AgentName),

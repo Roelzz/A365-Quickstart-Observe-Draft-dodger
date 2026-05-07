@@ -407,9 +407,10 @@ jq 'select(.RecordType == "AIInvokeAgent") | .AuditData' audit-results/*.jsonl
 # Run a search, then filter the JSONL down to just Draft Dodger trace records
 ./scripts/query-audit.sh fc3ad290-1d0e-491e-aca7-d09fc89ad656 1
 LATEST=$(ls -t audit-results/*.jsonl | head -1)
-jq -r 'select(
+AGENT_GUID=fc3ad290-1d0e-491e-aca7-d09fc89ad656   # AGENT365OBSERVABILITY__AGENTID from your .env
+jq -r --arg AGUID "$AGENT_GUID" 'select(
     (.RecordType == "AIInvokeAgent" or .RecordType == "AIInferenceCall" or .RecordType == "AIExecuteTool")
-    and (((.AuditData.AgentName // "") == "Draft Dodger") or ((.AuditData.TargetAgentName // "") == "Draft Dodger"))
+    and (((.AuditData.AgentId // "") == $AGUID) or ((.AuditData.TargetAgentId // "") == $AGUID))
   )
   | [.CreationDate, .RecordType,
      (.AuditData.TargetAgentName // .AuditData.AgentName),
@@ -418,17 +419,19 @@ jq -r 'select(
   | @tsv' "$LATEST" | sort | column -t -s$'\t'
 ```
 
-Sample output:
+Sample output (mixed test-script + real-Copilot-turn rows for the same agent):
 
 ```
-2026-05-06T10:58:38  AIInvokeAgent    Draft Dodger  fc3ad290-…  test-conversation-4032febb-…
-2026-05-06T10:58:38  AIInferenceCall  Draft Dodger  fc3ad290-…  test-conversation-4032febb-…
-2026-05-06T11:31:23  AIInvokeAgent    Draft Dodger  fc3ad290-…  test-conversation-d358d228-…
-2026-05-06T11:31:23  AIInferenceCall  Draft Dodger  fc3ad290-…  test-conversation-d358d228-…
+2026-05-06T10:58:38  AIInvokeAgent    Draft Dodger           fc3ad290-…  test-conversation-4032febb-…
+2026-05-06T10:58:38  AIInferenceCall  Draft Dodger           fc3ad290-…  test-conversation-4032febb-…
+2026-05-06T12:55:15  AIInvokeAgent    Draft Dodger Identity  fc3ad290-…  19:6173da01-…@unq.gbl.spaces
+2026-05-06T12:55:15  AIInferenceCall  Draft Dodger Identity  fc3ad290-…  19:6173da01-…@unq.gbl.spaces
+2026-05-07T09:22:08  AIInvokeAgent    Draft Dodger Identity  fc3ad290-…  19:6173da01-…@unq.gbl.spaces
+2026-05-07T09:22:08  AIInferenceCall  Draft Dodger Identity  fc3ad290-…  19:6173da01-…@unq.gbl.spaces
 …
 ```
 
-Each turn produces an `AIInvokeAgent` + `AIInferenceCall` pair (Draft Dodger doesn't use tools, so no `AIExecuteTool`). The filter relies on `AgentName == "Draft Dodger"` matching `AuditData.AgentName` for `AIInferenceCall` rows and `AuditData.TargetAgentName` for `AIInvokeAgent` rows — handles both field positions cleanly. To inspect the full `AuditData` JSON of any single matching row, drop the `[…] | @tsv` projection and replace the closing pipe with `| .AuditData` instead.
+Each turn produces an `AIInvokeAgent` + `AIInferenceCall` pair (Draft Dodger doesn't use tools, so no `AIExecuteTool`). The filter matches on **agentic-user GUID** rather than display name because the running agent reads `AGENT365OBSERVABILITY__AGENTNAME` from `.env` and your test script (`scripts/test_a365_export.py`) hardcodes a different string — same agent, two `AgentName` values (`"Draft Dodger"` vs `"Draft Dodger Identity"`). The GUID is invariant. The `AgentId`/`TargetAgentId` fallback handles the [caller→target schema](#microsoft-purview-audit-log-canonical-microsoft-cloud-surface) where `AIInferenceCall` puts the GUID on `AgentId` and `AIInvokeAgent` puts it on `TargetAgentId`. The `ConversationId` column tells you which environment the row came from at a glance — `test-conversation-…` is the offline test script, `19:…@unq.gbl.spaces` is a real Teams turn. To inspect the full `AuditData` JSON of any single matching row, drop the `[…] | @tsv` projection and replace the closing pipe with `| .AuditData` instead.
 
 > ⚠️ **`AgentId` vs `TargetAgentId` — read this before reading the JSONL.** On `AIInvokeAgent` (RecordType 406) rows, `AuditData.AgentId` and `AuditData.AgentBlueprintId` are `00000000-…` even for our agent. That's the schema: those fields describe the **caller** (zero for human-initiated turns), and Draft Dodger's IDs live on `TargetAgentId` / `TargetAgentBlueprintID` instead. On `AIInferenceCall` (407) and `AIExecuteTool` (408), the IDs *are* in the top-level `AgentId` / `AgentBlueprintId`. To pull the right ID regardless of RecordType:
 >
