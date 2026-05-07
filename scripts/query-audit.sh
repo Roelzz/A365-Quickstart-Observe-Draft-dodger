@@ -113,6 +113,20 @@ Write-Host ("Audit search: '" + \$q + "', last " + \$d + " day(s)")
 \$r = Search-UnifiedAuditLog -StartDate (Get-Date).AddDays(-\$d) -EndDate (Get-Date) -FreeText \$q -ResultSize 5000
 Write-Host ("rows: " + \$r.Count)
 if (\$r.Count -gt 0) {
+    # Freshness diagnostic — the Purview Audit pipeline lags real time by
+    # 30 min – 24 h, so a turn fired in the last few minutes won't be in
+    # the dump even if everything is wired correctly. Show the gap so the
+    # operator doesn't panic mid-demo.
+    \$nowUtc = (Get-Date).ToUniversalTime()
+    \$newest = (\$r | ForEach-Object { [datetime]::Parse(\$_.CreationDate, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal) } | Measure-Object -Maximum).Maximum
+    if (\$newest) {
+        \$lag = \$nowUtc - \$newest
+        \$lagStr = '{0:N0}m' -f \$lag.TotalMinutes
+        Write-Host ("Newest row: " + \$newest.ToString('s') + 'Z  (' + \$lagStr + ' ago)')
+        Write-Host ("Purview Audit pipeline lag is documented as 30 min - 24 h.")
+        Write-Host ("If a recent turn is missing, wait and re-run -- or use Aspire for real-time.")
+    }
+    Write-Host ''
     \$r | Group-Object RecordType | Sort-Object Count -Descending | Format-Table Name, Count -AutoSize | Out-String | Write-Host
     \$r | Select-Object -First 10 | Format-Table CreationDate, RecordType, Operations, UserIds -AutoSize | Out-String | Write-Host
     Write-Host '--- Sample AuditData (first row) ---'
