@@ -53,3 +53,6 @@ audit-results/
 
 # Local git worktrees — project-local convention (cd .worktrees/<branch>/ to test in-flight branches)
 .worktrees/
+
+# Personal demo runbook (contains tenant-specific IDs, paths)
+demo.md
