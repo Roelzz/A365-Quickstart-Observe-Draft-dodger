@@ -595,6 +595,22 @@ There's an *untested* alternative class to try: `a365 publish --aiteammate false
 
 ---
 
+## 24. Multi-instance scaling — Python doesn't have the §9.2 hardcoded-instance bug
+
+The TS reference's `Building-the-Agent-Guide.md` §9.2 documents a bug where a hardcoded `AGENT_INSTANCE_ID` env var and string-literal fallback caused new agentic instances to fail telemetry export with HTTP 403 — the URL was pinned to one instance while the token was minted for whichever instance the activity carried. **The Python port at this repo never had that pattern** — verified May 2026 against every runtime path the bug would touch.
+
+Why we're immune (file:line citations):
+
+- **No fallback chain on per-turn instance ID.** `host_agent_server.py:170` reads `context.activity.recipient.agentic_app_id` directly. No `or os.getenv(...)`. No string-literal fallback. The same dynamic `agent_id` is then handed to `cache_agentic_token(tenant_id, agent_id, ...)` at `host_agent_server.py:162` and to `agent.process_user_message(...)` which builds `AgentDetails(agent_id=agentic_user_id)` at `agent.py:177` (sourced via `agent.py:245`).
+- **Env-var fallback exists, but only for `agent_blueprint_id`.** `agent.py:182-186` chains `AGENT365OBSERVABILITY__AGENTBLUEPRINTID` → `AGENT365OBSERVABILITY__AGENTID` → `AGENT_ID` — and assigns it to `agent_blueprint_id`, a *separate field* that's correctly per-deployment-static. None of those env vars feed into the per-turn instance ID.
+- **Token cache key matches.** `cache_agentic_token` (`token_cache.py:17`) and `get_cached_agentic_token` (`token_cache.py:24`) both build `(tenant_id, agent_id)`. The exporter resolver at `observability.py:176` looks up under the same key. Per-instance tokens never collide.
+- **Activity-model inversion.** §17 documents that Python's agent identity is on `recipient.agentic_app_id`, not `from.agenticAppId` (which is what the TS guide reads from). The §9.2 fallback chain — `from.agenticAppId || process.env.AGENT_INSTANCE_ID || '<hardcoded>'` — has nowhere to hook in our code.
+- **Zero hardcoded GUIDs in runtime paths.** Grepped `agent.py`/`host_agent_server.py`/`observability.py`/`token_cache.py`/`agent_interface.py` for the 8-4-4-4-12 GUID pattern: zero hits. The only GUID in code is the static A365 observability scope at `host_agent_server.py:289` (`5a807f24-…/.default`), which is a global SDK-defined constant, not a per-instance ID.
+
+**The cost of regressing.** If you ever introduce a hardcoded fallback or env-var pin for the per-turn agent ID, you reintroduce the §9.2 bug and one specific instance's Activity-tab rendering breaks while others keep working. Don't.
+
+---
+
 ## Quick-glance error → lesson map
 
 | You see this | Read | TL;DR |
@@ -624,3 +640,4 @@ There's an *untested* alternative class to try: `a365 publish --aiteammate false
 | MAC Activity tab still empty even with the §20 four attributes set | §22 | Three more attributes the SDK won't auto-fill: `microsoft.session.description`, `gen_ai.response.finish_reasons`, and the 13 baggage fields from `populate_baggage.populate(...)`. |
 | MAC inventory shows your agent with empty "Platform" column | §23 | Server-stamped enum, not settable client-side. File a Microsoft feature request — there is no CLI flag, config field, or runtime attribute that controls this column. |
 | `user.id` shows as `8:orgid:...` instead of an AAD GUID in span output | §22 | `_build_caller_details` should use `from_property.aad_object_id` for `user_id`, not `from_property.id`. The `id` field is the channel-prefixed routing id; the renderer's active-user counter needs the bare AAD OID. |
+| New agentic instance lands in MAC but its Activity tab stays empty while another instance's tab works | §24 | If you've added a hardcoded fallback or `AGENT_INSTANCE_ID` env var for the per-turn agent ID, remove it. Python's correct path reads `recipient.agentic_app_id` per turn, no fallback. |
