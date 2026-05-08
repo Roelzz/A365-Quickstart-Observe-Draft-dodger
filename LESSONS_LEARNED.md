@@ -555,6 +555,46 @@ The schema fix above (the four required attributes) is still correct and necessa
 
 ---
 
+## 22. Activity-tab rendering — three more attributes the SDK won't auto-fill
+
+§20 listed four required attributes the SDK's structured scopes don't set automatically. Diffing against the reference TypeScript A365 sample (`microsoft/Agent365-nodejs`) surfaced three more — none of which are in the published `learn.microsoft.com` schema, all of which the TS sample sets and ours didn't.
+
+End-to-end-tested in May 2026: with all three plus the §20 four plus the fix below, a Teams turn produces an A365 ingest `HTTP 200 / rejectedSpans=0` and every required attribute is present on the InvokeAgentScope, InferenceScope, and OutputScope spans.
+
+| Required attribute | Source | What we missed |
+|---|---|---|
+| `microsoft.session.description` | `BaggageBuilder.session_description(...)` in `host_agent_server.py` | Never set anywhere — not on a scope, not in baggage. The TS reference sets it on baggage so it propagates to all spans. |
+| `gen_ai.response.finish_reasons` | `InferenceScope.record_finish_reasons(["stop"])` in the success path of `agent.py:process_user_message`; `["error"]` before re-raising in the except block | Never called. The OpenAI Responses API doesn't expose a single finish reason cleanly, but the SDK still expects the attribute. |
+| `user.id`, `microsoft.channel.name`, `gen_ai.conversation.id`, `microsoft.agent.user.id` (and 9 others) on **child** spans | `populate_baggage.populate(builder, turn_context)` from `microsoft_agents_a365.observability.hosting.scope_helpers` | Parent `InvokeAgentScope` already had these (set directly from `AgentDetails`/`CallerDetails`/`Request`). Child spans (`InferenceScope`, `OutputScope`, OpenAI auto-instrumented) did not — the SDK's `SpanProcessor.on_start` only enriches from baggage, and we put nothing in baggage besides `tenant_id` + `agent_id`. The `populate(...)` helper auto-fills 13 fields from the activity (TS equivalent: `BaggageBuilderUtils.fromTurnContext`). |
+
+**Bonus §9.1 follow-up.** The TS sample's `Building-the-Agent-Guide.md` §9.1 also flagged that `user.id` must be the bare AAD Object ID, not the channel-prefixed Bot Framework `id` (`8:orgid:...`). Our `_build_caller_details` had it backwards: `user_id = from_property.id`, `user_email = from_property.aad_object_id`. Swapped: `user_id` now uses `aad_object_id` (with the channel id as a fallback for non-Teams flows); `user_email` is the AAD OID since the activity carries no real UPN.
+
+**False alarms verified during the same review** (don't waste time re-debugging):
+- The two `configure()` calls (one in `observability.py:272` from the agent.py module-load, one in `host_agent_server.py:73`) **don't** clobber each other. `microsoft_agents_a365.observability.core.config:114-119` is idempotent — second call is a no-op with a warning. The first wins. Confirmed in the live log.
+- The token-resolver param order **is** `(tenant_id, agent_id)` consistently across `cache_agentic_token` and `get_cached_agentic_token`. No mismatch.
+- `BaggageBuilder` placement around `InvokeAgentScope` **is** correct — the host's `with BaggageBuilder()...build():` wraps `process_user_message(...)` which contains `InvokeAgentScope.start()`. Functionally equivalent to the TS sample's `baggageScope.run(async () => { InvokeAgentScope.start(...) })`.
+
+---
+
+## 23. MAC inventory "Platform" column — server-stamped, no client lever
+
+The Agent inventory at `admin.cloud.microsoft → Agents` has a "Platform" column showing values like "Copilot Studio", "Microsoft Foundry". For our agent (the `[AI teammate (1)]` row) it stays blank. **There is no way to set this from client-side tooling.**
+
+Verified across:
+- **Every `a365` CLI 1.1.176 flag** (latest at investigation time): no `--platform`, `--category`, `--type`, `--kind`, `--persona`, `--classification`, or `--surface`. Only platform-related flag is `--m365` on `setup blueprint`, which routes endpoint registration through MCP Platform — Microsoft picks the resulting label, not us.
+- **Every config and manifest in this project**: `a365.config.json`, `a365.generated.config.json`, `agent.json`, `manifest/manifest.json`, `manifest/agenticUserTemplateManifest.json` — none have a platform field.
+- **The MCP Platform API contract** at `https://agent365.svc.cloud.microsoft/agents/botManagement/createAgentBlueprint` — its 400-error response (caught in `~/.config/a365/logs/a365.setup.log`) requires only `CallbackUri` and `AgentIdentityBlueprintId`. No platform field accepted.
+- **The CLI's installed binaries** (`~/.dotnet/tools/.store/microsoft.agents.a365.devtools.cli/...`): strings-searched all DLLs; no reference to `PlatformAgentType`, `CustomBuiltAgentsUsingSDK`, `LocalHosted`, or any platform enum.
+- **Setting `agent_platform_id` on AgentDetails at runtime** (the SDK's `microsoft.a365.agent.platform.id` span attribute) — accepts free-form strings, but MAC's inventory does not read through to it for the column.
+
+The audit-log row's `PlatformAgentType: "CustomBuiltAgentsUsingSDK"` value is **server-stamped after registration** in the audit-log ingest pipeline, derived from the registration tooling/path, not from any field the client supplies. The enum is closed and undocumented client-side.
+
+**The only path** to a non-empty Platform column for a `CustomBuiltAgentsUsingSDK` agent today is a Microsoft feature/support request asking MAC to add a label for that class. Cite the blueprint ID when filing.
+
+There's an *untested* alternative class to try: `a365 publish --aiteammate false --use-blueprint` produces a "blueprint-based non-DW agent" instead of an AI Teammate. Whether that class shows a non-empty Platform is unknown — would require a parallel registration to test.
+
+---
+
 ## Quick-glance error → lesson map
 
 | You see this | Read | TL;DR |
@@ -581,3 +621,6 @@ The schema fix above (the four required attributes) is still correct and necessa
 | No `Span started: …` log lines, no exporter activity, no errors — completely silent | §16 | You set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` but forgot `ENABLE_A365_OBSERVABILITY=true`. The scopes' separate gate is unset. |
 | `TypeError: Response.__init__() got an unexpected keyword argument 'content'` | §18 | The kwarg is `messages`, not `content`. `Response(messages=output_text)`. |
 | `HTTP 400 EndpointInvalid: Tenant id  is invalid` from the **live** agent (not standalone) | §17 | `AgentDetails.agent_id` is your blueprint id. It must be the agentic-user id from `context.activity.recipient.agentic_app_id`. |
+| MAC Activity tab still empty even with the §20 four attributes set | §22 | Three more attributes the SDK won't auto-fill: `microsoft.session.description`, `gen_ai.response.finish_reasons`, and the 13 baggage fields from `populate_baggage.populate(...)`. |
+| MAC inventory shows your agent with empty "Platform" column | §23 | Server-stamped enum, not settable client-side. File a Microsoft feature request — there is no CLI flag, config field, or runtime attribute that controls this column. |
+| `user.id` shows as `8:orgid:...` instead of an AAD GUID in span output | §22 | `_build_caller_details` should use `from_property.aad_object_id` for `user_id`, not `from_property.id`. The `id` field is the channel-prefixed routing id; the renderer's active-user counter needs the bare AAD OID. |
