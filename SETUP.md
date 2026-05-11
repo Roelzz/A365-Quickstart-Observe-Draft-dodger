@@ -421,6 +421,8 @@ Run this in a side terminal during demos. The dev tunnel host is the brittle bit
 
 ## 14. Cleanup / reset
 
+> Already-registered agent and just need to change something? See [`RE-REGISTRATION.md`](RE-REGISTRATION.md) — scenario-based runbook for endpoint swaps, manifest re-publishes, permission re-grants, and full re-registrations.
+
 If you need to wipe everything and start over:
 
 ```bash

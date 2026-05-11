@@ -21,6 +21,7 @@
 |---|---|
 | **`README.md` (this file)** | Project overview, install runbook, demo-day ops, observability deep-dive |
 | [`SETUP.md`](SETUP.md) | Fresh-tenant runbook from clone to working in Copilot |
+| [`RE-REGISTRATION.md`](RE-REGISTRATION.md) | Scenario-based runbook for changing an *already-registered* agent — endpoint swaps, manifest re-publish, full cleanup → re-setup |
 | [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md) | Every error we hit + the fix. Read this first when something breaks |
 | [`.claude/skills/draft-dodger-setup/SKILL.md`](.claude/skills/draft-dodger-setup/SKILL.md) | Project-local Claude skill — interactive bootstrap. Invoke with `/draft-dodger-setup`. |
 | [`plans/phase-1-scaffold.md`](plans/phase-1-scaffold.md) | Phase 1 design notes (initial scaffold) |
@@ -604,12 +605,14 @@ A365_Draft_Dodger/
 
 Wired up in `observability.py` and called from `agent.py` at import time. Each call to `process_user_message` opens three nested A365 SDK structured scopes — `InvokeAgentScope` → `InferenceScope` → `OutputScope` — which are what the Microsoft cloud rendering pipeline (Purview Audit, Defender, Activity tab when supported) expects. Plain `tracer.start_as_current_span(...)` spans get accepted at the OTLP layer with HTTP 200 but never render in any Microsoft surface — see [`LESSONS_LEARNED.md` §15](LESSONS_LEARNED.md).
 
+`host_agent_server.py` opens a `BaggageBuilder` scope around every message/notification turn and pre-populates it via `populate_baggage.populate(builder, turn_context)` (the SDK helper at `microsoft_agents_a365.observability.hosting.scope_helpers`). That auto-fills 13 identity fields from the activity (`user.id`, `microsoft.agent.user.id`, `gen_ai.conversation.id`, `microsoft.channel.name`, etc.) so the SDK's `SpanProcessor.on_start` propagates them to **every** span — including child spans (`InferenceScope`, `OutputScope`) and any auto-instrumented OpenAI spans that the parent scope doesn't directly populate. Without this, child spans missed identity context and the rendering pipeline silently filtered them — see [`LESSONS_LEARNED.md` §22](LESSONS_LEARNED.md).
+
 Per-turn span tree, with attributes that land on each:
 
 | Span | Source | Required attributes (subset) |
 |---|---|---|
-| `invoke_agent Draft Dodger` (root, kind=CLIENT) | `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `gen_ai.agent.id`, `gen_ai.agent.name`, `microsoft.a365.agent.blueprint.id`, `microsoft.tenant.id`, `microsoft.agent.user.id`, `microsoft.agent.user.email`, `client.address`, `server.address`, `server.port`, `microsoft.channel.name`, `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `user.id`, `user.email` |
-| `Chat <model>` (child) | `InferenceScope.start(request, inference_details, agent_details)` then `record_input_tokens` / `record_output_tokens` / `record_output_messages` | `gen_ai.operation.name = "Chat"`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.provider.name` |
+| `invoke_agent Draft Dodger` (root, kind=CLIENT) | `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `gen_ai.agent.id`, `gen_ai.agent.name`, `microsoft.a365.agent.blueprint.id`, `microsoft.tenant.id`, `microsoft.agent.user.id`, `microsoft.agent.user.email`, `client.address`, `server.address`, `server.port`, `microsoft.channel.name`, `microsoft.session.description`, `gen_ai.conversation.id`, `gen_ai.input.messages`, `gen_ai.output.messages`, `user.id` (= `from_property.aad_object_id`), `user.email` |
+| `Chat <model>` (child) | `InferenceScope.start(request, inference_details, agent_details)` then `record_input_tokens` / `record_output_tokens` / `record_output_messages` / `record_finish_reasons(["stop"])` (or `["error"]` on exception) | `gen_ai.operation.name = "Chat"`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.provider.name`, `gen_ai.response.finish_reasons` |
 | `output_messages <agentic-user-id>` (child) | `OutputScope.start(request, response, agent_details)` | echoes the parent's identity attributes; carries the response body |
 
 Resource-level (set once via `configure(service_name=..., service_namespace=...)`):

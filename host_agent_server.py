@@ -40,6 +40,9 @@ from microsoft_agents_a365.observability.core.config import configure
 from microsoft_agents_a365.observability.core.middleware.baggage_builder import (
     BaggageBuilder,
 )
+from microsoft_agents_a365.observability.hosting.scope_helpers.populate_baggage import (
+    populate as populate_baggage_from_turn_context,
+)
 from microsoft_agents_a365.runtime.environment_utils import (
     get_observability_authentication_scope,
 )
@@ -197,7 +200,17 @@ class GenericAgentHost:
                     return
                 tenant_id, agent_id = result
 
-                with BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id).build():
+                # Pre-populate baggage from the turn context so child spans
+                # (InferenceScope, OutputScope, OpenAI auto-instrumented) carry
+                # user.id / channel / conversation / agent.user attrs the
+                # rendering pipeline expects. The SDK helper extracts 13 fields
+                # from the activity (incl. user.id from from_property.aad_object_id).
+                # See microsoft_agents_a365.observability.hosting.scope_helpers.utils.
+                builder = BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id)
+                populate_baggage_from_turn_context(builder, context)
+                channel_id = getattr(context.activity, "channel_id", None) or "unknown"
+                builder.session_description(f"Draft Dodger - {channel_id} channel")
+                with builder.build():
                     user_message = context.activity.text or ""
                     if not user_message.strip() or user_message.strip() == "/help":
                         return
@@ -227,7 +240,11 @@ class GenericAgentHost:
                     return
                 tenant_id, agent_id = result
 
-                with BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id).build():
+                builder = BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id)
+                populate_baggage_from_turn_context(builder, context)
+                channel_id = getattr(context.activity, "channel_id", None) or "unknown"
+                builder.session_description(f"Draft Dodger - {channel_id} channel")
+                with builder.build():
                     logger.info(f"📬 {notification_activity.notification_type}")
 
                     if not hasattr(self.agent_instance, "handle_agent_notification_activity"):
