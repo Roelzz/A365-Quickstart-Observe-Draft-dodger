@@ -1037,10 +1037,6 @@ scenario_e() {
   print_explain "⚠ SIDE EFFECT: The CLI overwrites .env and a365.generated.config.json"
   print_explain "  in the current directory with the new blueprint's values. This script"
   print_explain "  backed them up in step 1 and will restore them automatically."
-  print_explain "-n bypasses the project config, so the live blueprint is not touched."
-  print_explain "The CLI will print a new GUID — note it."
-  print_explain "⚠ The CLI will overwrite .env and a365.generated.config.json — originals"
-  print_explain "  will be auto-restored after this step."
   run_or_skip_critical "$setup_cmd" \
     "Blueprint registration failed — check tunnel, auth, and CLI version" || { _restore_configs "$env_backup" "$gen_backup"; return; }
   echo ""
@@ -1054,7 +1050,6 @@ scenario_e() {
     print_explain "publish step that flags the blueprint accordingly. This is a Microsoft-"
     print_explain "internal pattern — the --aiteammate --use-blueprint flags on 'a365 publish'"
     print_explain "mark the blueprint as blueprint-based, not AI Teammate."
-    print_explain "Marks this blueprint as 'not a digital worker' — internal Microsoft pattern."
     run_or_skip_critical "$post_cmd" \
       "Non-DW publish failed" || { _restore_configs "$env_backup" "$gen_backup"; return; }
     echo ""
@@ -1068,12 +1063,12 @@ scenario_e() {
   print_step 4 4 "Confirm both blueprints are visible"
   print_explain "WHY: Confirm that both the live blueprint and the new parallel blueprint"
   print_explain "are visible in the tenant. The query should show both names."
-  print_command "a365 query-entra"
+  print_command "a365 query-entra blueprint-scopes"
   local query_output
   if confirm "Run this command?"; then
     echo -e "    ${DIM}Running...${RST}"
     echo ""
-    query_output=$(a365 query-entra 2>&1) || true
+    query_output=$(a365 query-entra blueprint-scopes 2>&1) || true
     echo "$query_output"
     echo ""
     if echo "$query_output" | grep -qi "$parallel_name" 2>/dev/null; then
