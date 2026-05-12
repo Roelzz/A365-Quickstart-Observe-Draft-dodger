@@ -124,6 +124,17 @@ else
   echo -e "  ${YELLOW}⚠${RST} Tunnel: no messagingEndpoint in a365.config.json"
 fi
 
+# Client app ID (needed by a365 setup commands when using -n)
+PREFLIGHT_CLIENT_APP_ID=""
+if [[ -f a365.config.json ]]; then
+  PREFLIGHT_CLIENT_APP_ID=$(jq -r '.clientAppId // ""' a365.config.json 2>/dev/null)
+fi
+if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+  echo -e "  ${GREEN}✔${RST} Client app ID: ${DIM}${PREFLIGHT_CLIENT_APP_ID}${RST}"
+else
+  echo -e "  ${YELLOW}⚠${RST} Client app ID: not found in a365.config.json — CLI will prompt interactively"
+fi
+
 echo ""
 echo -e "${DIM}Press Enter to continue to menu...${RST}"
 read -r
@@ -788,14 +799,49 @@ scenario_e() {
   fi
   echo ""
 
+  # Build setup command, injecting clientAppId if available to avoid interactive prompt
+  local client_app_flag=""
+  if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+    client_app_flag="--client-app-id $PREFLIGHT_CLIENT_APP_ID"
+  fi
   local setup_cmd="${SELECTED_CLASS_CMD} -n \"$parallel_name\" $SELECTED_CLASS_FLAGS"
 
   print_step 2 3 "Register second blueprint (${SELECTED_CLASS_NAME})"
   print_command "$setup_cmd"
+  if [[ -n "$client_app_flag" ]]; then
+    print_explain "Client app ID auto-resolved from a365.config.json: $PREFLIGHT_CLIENT_APP_ID"
+  fi
   print_explain "-n bypasses the project config, so the live blueprint is not touched."
   print_explain "The CLI will print a new GUID — note it."
-  run_or_skip_critical "$setup_cmd" \
-    "Blueprint registration failed — check tunnel, auth, and CLI version" || return
+  if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+    print_explain "Client app ID will be auto-provided from a365.config.json."
+    if confirm "Run this command?"; then
+      echo -e "    ${DIM}Running (auto-providing clientAppId: ${PREFLIGHT_CLIENT_APP_ID})...${RST}"
+      echo ""
+      # Pipe clientAppId for the first prompt, then reconnect terminal for device-code etc.
+      eval "$setup_cmd" < <(echo "$PREFLIGHT_CLIENT_APP_ID"; cat < /dev/tty)
+      local rc=$?
+      echo ""
+      if [[ $rc -eq 0 ]]; then
+        print_success "Command succeeded (exit $rc)"
+      else
+        print_warning "Blueprint registration failed — check tunnel, auth, and CLI version (exit $rc)"
+        echo ""
+        print_info "Fix the issue and try this scenario again."
+        CURRENT_STEP=""
+        pause_for_menu
+        return
+      fi
+    else
+      echo -e "    ${DIM}Skipped — treating as abort for this scenario.${RST}"
+      CURRENT_STEP=""
+      pause_for_menu
+      return
+    fi
+  else
+    run_or_skip_critical "$setup_cmd" \
+      "Blueprint registration failed — check tunnel, auth, and CLI version" || return
+  fi
   echo ""
 
   # Non-DW requires an additional publish step
