@@ -656,28 +656,28 @@ pick_registration_class() {
   echo -e "  ${BOLD}Choose the registration class for the new parallel blueprint:${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}1)${RST}  Blueprint-only with OBO (M365)     ${DIM}— default, GA, least privilege${RST}"
-  echo -e "      ${DIM}Flags: --m365${RST}"
-  echo -e "      ${DIM}Role:  Agent ID Developer (or Global Admin)${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365${RST}"
+  echo -e "      ${DIM}Role:    Agent ID Developer (or Global Admin)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}2)${RST}  Blueprint-only with S2S (M365)     ${DIM}— autonomous/headless agents${RST}"
-  echo -e "      ${DIM}Flags: --m365 --authmode s2s${RST}"
-  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode s2s${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}3)${RST}  Blueprint-only with Both (M365)    ${DIM}— OBO + S2S hybrid${RST}"
-  echo -e "      ${DIM}Flags: --m365 --authmode both${RST}"
-  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode both${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}4)${RST}  AI Teammate (M365)                 ${DIM}— own Entra user identity${RST}"
-  echo -e "      ${DIM}Flags: --m365 --aiteammate true${RST}"
-  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --aiteammate${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}5)${RST}  AI Teammate (non-M365)             ${DIM}— Teams-only, no Copilot surface${RST}"
-  echo -e "      ${DIM}Flags: --aiteammate true${RST}"
-  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --aiteammate${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
   echo ""
   echo -e "  ${BOLD}${MAGENTA}6)${RST}  Blueprint-based Non-DW (internal)  ${DIM}— Microsoft-internal pattern${RST}"
-  echo -e "      ${DIM}Flags: --m365 --aiteammate false --use-blueprint${RST}"
-  echo -e "      ${DIM}Role:  Agent ID Developer${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365  (then a365 publish --aiteammate --use-blueprint)${RST}"
+  echo -e "      ${DIM}Role:    Agent ID Developer${RST}"
   echo ""
 
   echo -ne "  ${BOLD}Choose class [1-6, default=1]:${RST} "
@@ -686,53 +686,70 @@ pick_registration_class() {
   case "${class_choice:-1}" in
     1)
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
+      SELECTED_CLASS_POST_CMD=""
       ;;
     2)
       SELECTED_CLASS_NAME="Blueprint-only S2S (M365)"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365 --authmode s2s"
       SELECTED_CLASS_ROLE="Global Administrator"
       SELECTED_CLASS_NEEDS_GA=true
+      SELECTED_CLASS_POST_CMD=""
       ;;
     3)
       SELECTED_CLASS_NAME="Blueprint-only Both (M365)"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365 --authmode both"
       SELECTED_CLASS_ROLE="Global Administrator"
       SELECTED_CLASS_NEEDS_GA=true
+      SELECTED_CLASS_POST_CMD=""
       ;;
     4)
       SELECTED_CLASS_NAME="AI Teammate (M365)"
-      SELECTED_CLASS_FLAGS="--m365 --aiteammate true"
+      SELECTED_CLASS_CMD="a365 setup all"
+      SELECTED_CLASS_FLAGS="--m365 --aiteammate"
       SELECTED_CLASS_ROLE="Global Administrator + M365 license"
       SELECTED_CLASS_NEEDS_GA=true
+      SELECTED_CLASS_POST_CMD=""
       ;;
     5)
       SELECTED_CLASS_NAME="AI Teammate (non-M365)"
-      SELECTED_CLASS_FLAGS="--aiteammate true"
+      SELECTED_CLASS_CMD="a365 setup all"
+      SELECTED_CLASS_FLAGS="--aiteammate"
       SELECTED_CLASS_ROLE="Global Administrator + M365 license"
       SELECTED_CLASS_NEEDS_GA=true
+      SELECTED_CLASS_POST_CMD=""
       ;;
     6)
       SELECTED_CLASS_NAME="Blueprint-based Non-DW (internal)"
-      SELECTED_CLASS_FLAGS="--m365 --aiteammate false --use-blueprint"
+      SELECTED_CLASS_CMD="a365 setup all"
+      SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
+      SELECTED_CLASS_POST_CMD="a365 publish --aiteammate --use-blueprint"
       ;;
     *)
       echo -e "  ${RED}Invalid choice — defaulting to Blueprint-only OBO (M365).${RST}"
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
+      SELECTED_CLASS_POST_CMD=""
       ;;
   esac
 
   echo ""
   echo -e "  ${GREEN}✔${RST} Selected: ${BOLD}${SELECTED_CLASS_NAME}${RST}"
-  echo -e "    Flags: ${CYAN}${SELECTED_CLASS_FLAGS}${RST}"
-  echo -e "    Role:  ${SELECTED_CLASS_ROLE}"
+  echo -e "    Command: ${CYAN}${SELECTED_CLASS_CMD} -n \"<name>\" ${SELECTED_CLASS_FLAGS}${RST}"
+  if [[ -n "$SELECTED_CLASS_POST_CMD" ]]; then
+    echo -e "    Then:    ${CYAN}${SELECTED_CLASS_POST_CMD}${RST}"
+  fi
+  echo -e "    Role:    ${SELECTED_CLASS_ROLE}"
   if $SELECTED_CLASS_NEEDS_GA; then
     echo -e "    ${YELLOW}⚠ This class requires Global Administrator.${RST}"
   fi
@@ -771,7 +788,7 @@ scenario_e() {
   fi
   echo ""
 
-  local setup_cmd="a365 setup blueprint -n \"$parallel_name\" $SELECTED_CLASS_FLAGS"
+  local setup_cmd="${SELECTED_CLASS_CMD} -n \"$parallel_name\" $SELECTED_CLASS_FLAGS"
 
   print_step 2 3 "Register second blueprint (${SELECTED_CLASS_NAME})"
   print_command "$setup_cmd"
@@ -780,6 +797,17 @@ scenario_e() {
   run_or_skip_critical "$setup_cmd" \
     "Blueprint registration failed — check tunnel, auth, and CLI version" || return
   echo ""
+
+  # Non-DW requires an additional publish step
+  if [[ -n "$SELECTED_CLASS_POST_CMD" ]]; then
+    print_step "2b" 3 "Mark as Non-DW blueprint"
+    local post_cmd="${SELECTED_CLASS_POST_CMD} -n \"$parallel_name\""
+    print_command "$post_cmd"
+    print_explain "Marks this blueprint as 'not a digital worker' — internal Microsoft pattern."
+    run_or_skip_critical "$post_cmd" \
+      "Non-DW publish failed" || return
+    echo ""
+  fi
 
   print_step 3 3 "Confirm both blueprints are visible"
   print_command "a365 query-entra"
