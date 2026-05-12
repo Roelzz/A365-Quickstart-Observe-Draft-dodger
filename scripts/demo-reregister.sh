@@ -1,8 +1,47 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # A365 Agent Re-registration Demo
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Menu-driven walk-through of the five re-registration scenarios documented
 # in RE-REGISTRATION.md. Values sourced from .env + a365 config files.
+#
+# SCENARIOS
+#   A — Endpoint Swap          Dev-tunnel URL changed. Update the blueprint's
+#                              messagingEndpoint. Nothing else changes.
+#   B — Manifest Re-publish    Display name, description, or icon changed.
+#                              Re-generate and re-upload the Teams manifest.
+#   C — Permissions Re-grant   Graph scope added or consent expired. Re-run
+#                              admin consent for MCP + Bot permissions.
+#   D — Full Cleanup → Re-setup (DESTRUCTIVE) Wrong --m365, --aiteammate,
+#                              or auth mode. Delete everything, start over.
+#   E — Side-by-side Parallel  Register a second blueprint alongside the live
+#                              one. Both coexist in the tenant. Non-destructive.
+#
+# REQUIRED TOOLS
+#   bash, jq, a365 CLI ≥ 1.1.174, az CLI, pwsh (PowerShell), curl
+#   Install a365:  dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli
+#   Install pwsh:  brew install powershell/tap/powershell
+#
+# REQUIRED AUTH
+#   Depends on scenario — see each scenario's prereq block.
+#   Scenario A/B:   Agent ID Developer role (or Global Admin)
+#   Scenario C/D/E: Global Administrator (or at minimum GA for consent steps)
+#
+# CONFIG FILES READ
+#   .env                         — environment variables (client secret, etc.)
+#   a365.config.json             — project config (endpoint, client app ID, etc.)
+#   a365.generated.config.json   — live registration state (blueprint ID, etc.)
+#
+# IMPORTANT
+#   • The CLI client app MUST be named "Agent 365 CLI" in Entra for -n mode
+#     to work. The CLI looks up the client app by display name, not by ID.
+#   • Scenario E backs up and restores .env + a365.generated.config.json
+#     because the CLI overwrites them during -n registration.
+#
+# USAGE
+#   bash scripts/demo-reregister.sh
+#
 # ─────────────────────────────────────────────────────────────────────────────
 set -Euo pipefail
 
@@ -133,6 +172,25 @@ if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; 
   echo -e "  ${GREEN}✔${RST} Client app ID: ${DIM}${PREFLIGHT_CLIENT_APP_ID}${RST}"
 else
   echo -e "  ${YELLOW}⚠${RST} Client app ID: not found in a365.config.json — CLI will prompt interactively"
+fi
+
+# Check client app display name matches what the CLI expects
+if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+  CLIENT_APP_NAME=$(az ad app show --id "$PREFLIGHT_CLIENT_APP_ID" --query displayName -o tsv 2>/dev/null || echo "unknown")
+  if [[ "$CLIENT_APP_NAME" == "Agent 365 CLI" ]]; then
+    echo -e "  ${GREEN}✔${RST} Client app name: $CLIENT_APP_NAME"
+  else
+    echo -e "  ${YELLOW}⚠${RST} Client app name: '$CLIENT_APP_NAME' — CLI expects 'Agent 365 CLI'"
+    echo -e "    Fix: ${CYAN}az ad app update --id $PREFLIGHT_CLIENT_APP_ID --display-name 'Agent 365 CLI'${RST}"
+  fi
+fi
+
+# PowerShell (needed for Graph pre-auth in scenario E)
+if command -v pwsh &>/dev/null; then
+  echo -e "  ${GREEN}✔${RST} PowerShell (pwsh): available"
+else
+  echo -e "  ${YELLOW}⚠${RST} PowerShell (pwsh): not found — needed for Graph pre-auth in scenario E"
+  echo -e "    Install: ${CYAN}brew install powershell/tap/powershell${RST}"
 fi
 
 echo ""
@@ -295,6 +353,27 @@ check_prereqs() {
           echo -e "    ${RED}✗${RST} manifest/manifest.json not found"
           all_ok=false
         fi ;;
+      pwsh)
+        if command -v pwsh &>/dev/null; then
+          echo -e "    ${GREEN}✔${RST} PowerShell (pwsh) available"
+        else
+          echo -e "    ${RED}✗${RST} PowerShell (pwsh) not found — needed for Graph pre-auth on macOS"
+          all_ok=false
+        fi ;;
+      client-app-name)
+        if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+          local app_name
+          app_name=$(az ad app show --id "$PREFLIGHT_CLIENT_APP_ID" --query displayName -o tsv 2>/dev/null || echo "unknown")
+          if [[ "$app_name" == "Agent 365 CLI" ]]; then
+            echo -e "    ${GREEN}✔${RST} Client app display name: 'Agent 365 CLI'"
+          else
+            echo -e "    ${RED}✗${RST} Client app display name: '$app_name' — must be 'Agent 365 CLI'"
+            echo -e "      Fix: ${CYAN}az ad app update --id $PREFLIGHT_CLIENT_APP_ID --display-name 'Agent 365 CLI'${RST}"
+            all_ok=false
+          fi
+        else
+          echo -e "    ${YELLOW}⚠${RST} Client app ID not found — CLI will prompt interactively"
+        fi ;;
     esac
   done
   echo ""
@@ -370,12 +449,14 @@ show_concepts() {
   echo -e "  ${DIM}The multi-tenant Entra App Registration (OData type 'agent') that defines"
   echo -e "  permissions, roles, and identity patterns. Identified by agentBlueprintId."
   echo -e "  Lives forever until you run ${CYAN}a365 cleanup blueprint${DIM}.${RST}"
+  echo -e "  ${DIM}Created by: ${CYAN}a365 setup blueprint${DIM}  |  Auth: Agent ID Developer role${RST}"
   echo ""
 
   echo -e "  ${BOLD}${CYAN}2. Service Principal (SP)${RST}"
   echo -e "  ${DIM}The per-tenant instance of the blueprint app. Carries the consent grants."
   echo -e "  Created automatically when the blueprint is registered in your tenant."
   echo -e "  Destroyed when you cleanup the blueprint.${RST}"
+  echo -e "  ${DIM}Created by: auto-created with blueprint  |  Auth: no separate auth needed${RST}"
   echo ""
 
   echo -e "  ${BOLD}${CYAN}3. Agentic User Identity${RST}"
@@ -383,23 +464,27 @@ show_concepts() {
   echo -e "  Teams presence. No password — authenticates via federated credentials."
   echo -e "  Identified by agentInstanceId per user. Survives blueprint updates"
   echo -e "  except full cleanup (scenario D).${RST}"
+  echo -e "  ${DIM}Created by: ${CYAN}a365 setup all --aiteammate${DIM}  |  Auth: Global Admin + M365 license${RST}"
   echo ""
 
   echo -e "  ${BOLD}${CYAN}4. Messaging Endpoint${RST}"
   echo -e "  ${DIM}The HTTPS URL the Bot Framework POSTs /api/messages to. This is the only"
   echo -e "  thing scenario A changes. Usually your dev tunnel URL."
   echo -e "  Currently: ${CYAN}$(get_live_endpoint)${RST}"
+  echo -e "  ${DIM}Registered by: ${CYAN}a365 setup all --m365${DIM}  |  Auth: Agent ID Developer${RST}"
   echo ""
 
   echo -e "  ${BOLD}${CYAN}5. MCP Platform Link${RST}"
   echo -e "  ${DIM}How the blueprint is registered with the A365 service so it shows up in"
   echo -e "  M365 Admin Center → Agents. Created by --m365 flag during setup.${RST}"
+  echo -e "  ${DIM}Auto-registered with --m365  |  Auth: Agent ID Developer${RST}"
   echo ""
 
   echo -e "  ${BOLD}${CYAN}6. Manifest${RST}"
   echo -e "  ${DIM}The Teams app package (manifest.zip) that admins upload. Holds the bot's"
   echo -e "  display metadata and points at the blueprint's app ID."
   echo -e "  Generated by ${CYAN}a365 publish${DIM}, then manually uploaded to Admin Center.${RST}"
+  echo -e "  ${DIM}Generated by: ${CYAN}a365 publish${DIM}  |  Auth: uploaded manually (Global Admin or Agent ID Developer)${RST}"
   echo ""
 
   echo -e "  ${BOLD}What each cleanup command destroys:${RST}"
@@ -427,13 +512,43 @@ show_state() {
   echo -e "  ${BOLD}Endpoint:${RST}         $(get_live_endpoint)"
   echo ""
 
+  # Client app ID and display name
+  if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+    local client_name
+    client_name=$(az ad app show --id "$PREFLIGHT_CLIENT_APP_ID" --query displayName -o tsv 2>/dev/null || echo "unknown")
+    echo -e "  ${BOLD}Client app ID:${RST}    ${PREFLIGHT_CLIENT_APP_ID}"
+    echo -e "  ${BOLD}Client app name:${RST}  ${client_name}"
+  else
+    echo -e "  ${BOLD}Client app ID:${RST}    ${DIM}(not found in a365.config.json)${RST}"
+  fi
+
+  # PowerShell availability
+  if command -v pwsh &>/dev/null; then
+    echo -e "  ${BOLD}PowerShell:${RST}       ${GREEN}available${RST}"
+  else
+    echo -e "  ${BOLD}PowerShell:${RST}       ${YELLOW}not found${RST}"
+  fi
+
+  # Tunnel URL
+  if [[ -n "$TUNNEL_ENDPOINT" && "$TUNNEL_ENDPOINT" != "null" ]]; then
+    echo -e "  ${BOLD}Tunnel URL:${RST}       ${TUNNEL_BASE:-$TUNNEL_ENDPOINT}"
+  else
+    echo -e "  ${BOLD}Tunnel URL:${RST}       ${DIM}(not configured)${RST}"
+  fi
+  echo ""
+
   if [[ -f a365.generated.config.json ]]; then
     local last_updated
     last_updated=$(jq -r '.lastUpdated // "(unknown)"' a365.generated.config.json)
     local cli_version
     cli_version=$(jq -r '.cliVersion // "(unknown)"' a365.generated.config.json)
-    echo -e "  ${DIM}Last updated: $last_updated${RST}"
-    echo -e "  ${DIM}CLI version:  $cli_version${RST}"
+    local consent_count
+    consent_count=$(jq '[.consentGrants // [] | .[] | select(.consentGranted == true)] | length' a365.generated.config.json 2>/dev/null || echo "0")
+    local total_grants
+    total_grants=$(jq '[.consentGrants // [] | .[]] | length' a365.generated.config.json 2>/dev/null || echo "0")
+    echo -e "  ${DIM}Last updated:    $last_updated${RST}"
+    echo -e "  ${DIM}CLI version:     $cli_version${RST}"
+    echo -e "  ${DIM}Consent grants:  $consent_count/$total_grants granted${RST}"
   else
     echo -e "  ${YELLOW}a365.generated.config.json not found — agent not yet registered.${RST}"
   fi
@@ -449,6 +564,17 @@ scenario_a() {
   print_explain "at a new https://…/api/messages URL. Nothing else changes — same blueprint"
   print_explain "ID, same agentic-user identities, same Teams installs."
   echo ""
+  print_explain ""
+  print_explain "WHY: The messaging endpoint is the HTTPS URL the Bot Framework POSTs"
+  print_explain "/api/messages to. When your dev-tunnel restarts with a new URL (laptop"
+  print_explain "reset, region migration, new tunnel name), the blueprint needs to know."
+  print_explain ""
+  print_explain "WHAT CHANGES: Only the messagingEndpoint field on the blueprint flips."
+  print_explain "Blueprint ID, agentic-user identities, Teams installs — all preserved."
+  print_explain ""
+  print_explain "AUTH: Agent ID Developer role (or Global Admin). az login required."
+  print_explain "No admin consent needed — this is a metadata-only update."
+  echo ""
 
   check_prereqs "Scenario A" az-login cli-version role-agent-dev generated-config || return
 
@@ -461,16 +587,16 @@ scenario_a() {
   local endpoint
   endpoint=$(get_live_endpoint)
   print_command "a365 setup blueprint --m365 --update-endpoint \"$endpoint\""
-  print_explain "⚠ --m365 is REQUIRED. Without it the command silently no-ops."
-  print_explain "See LESSONS_LEARNED.md §5.1."
+  print_explain "⚠ --m365 is REQUIRED. Without it the command silently no-ops —"
+  print_explain "  the CLI prints 'Skipping...M365 agents' and does nothing."
   run_or_skip_critical "a365 setup blueprint --m365 --update-endpoint \"$endpoint\"" \
     "Endpoint update failed" || return
 
   echo ""
   print_info "Verification: send one Teams turn. Agent log should show"
   print_info "POST /api/messages HTTP/1.1 202."
-  print_info "If you get 502s — Bot Framework cache. Self-heals in ~2 min."
-  print_info "See LESSONS_LEARNED.md §8."
+  print_info "If you get 502s — that's the Bot Framework onboarding storm."
+  print_info "It self-heals in ~2 minutes. Don't restart anything."
 
   CURRENT_STEP=""
   pause_for_menu
@@ -483,6 +609,18 @@ scenario_b() {
   print_explain "You edited the agent display name, description, icon, or accent colour"
   print_explain "and need the change to surface in M365 Admin Center."
   echo ""
+  print_explain ""
+  print_explain "WHY: The manifest.zip is the Teams app package that admins upload to"
+  print_explain "M365 Admin Center. It contains display name, description, icon, and"
+  print_explain "the blueprint's app ID. When you change any of these, you need to"
+  print_explain "re-generate and re-upload the manifest."
+  print_explain ""
+  print_explain "QUIRK: 'a365 publish' overwrites your custom description with a generic"
+  print_explain "placeholder every time. That's why step 3 re-edits the manifest after publish."
+  print_explain ""
+  print_explain "AUTH: Agent ID Developer role. Upload step requires Global Admin or"
+  print_explain "Agent ID Developer with admin centre access."
+  echo ""
 
   check_prereqs "Scenario B" az-login cli-version role-agent-dev manifest || return
 
@@ -493,8 +631,8 @@ scenario_b() {
 
   print_step 2 4 "Re-publish manifest"
   print_command "a365 publish"
-  print_explain "⚠ a365 publish overwrites your custom description with a placeholder."
-  print_explain "See LESSONS_LEARNED.md §5.2."
+  print_explain "⚠ a365 publish overwrites your custom description with a generic"
+  print_explain "  placeholder every time. That's why step 3 re-edits after publish."
   run_or_skip_critical "a365 publish" "Manifest publish failed" || return
   echo ""
 
@@ -544,6 +682,16 @@ scenario_c() {
   print_explain "You added a new Graph scope, consent expired, or you re-installed a"
   print_explain "permission via Graph PowerShell and need the CLI's record to match."
   echo ""
+  print_explain ""
+  print_explain "WHY: Graph permissions (Mail.ReadWrite, Chat.ReadWrite, etc.) are"
+  print_explain "granted as delegated permissions on the blueprint's service principal."
+  print_explain "If you added a new scope, consent expired, or you reinstalled a"
+  print_explain "permission via Graph PowerShell, the CLI's record needs to match."
+  print_explain ""
+  print_explain "AUTH: Global Administrator required. If you're not GA, the CLI prints"
+  print_explain "an admin-consent URL that a GA must visit to approve."
+  print_explain "This is the most privilege-heavy non-destructive scenario."
+  echo ""
 
   check_prereqs "Scenario C" az-login cli-version role-global-admin generated-config || return
 
@@ -579,6 +727,19 @@ scenario_d() {
   print_explain "What dies: Entra app, SP, all agentic-user identity associations,"
   print_explain "Teams app installs keyed to the old blueprint ID, audit-log continuity."
   print_explain "What survives: repo code, dev-tunnel URL, .env (except client secret)."
+  echo ""
+  print_explain ""
+  print_explain "WHY: Some registration choices can't be changed after the fact —"
+  print_explain "missing --m365 flag, wrong --aiteammate setting, wrong agent class."
+  print_explain "The only fix is to delete everything and re-register from scratch."
+  print_explain ""
+  print_explain "AUTH: Global Administrator required for every step."
+  print_explain "  Step 1: snapshot (no auth needed)"
+  print_explain "  Step 2: cleanup blueprint — GA to delete Entra app"
+  print_explain "  Step 3: cleanup instance — GA to delete agentic users"
+  print_explain "  Step 4: setup blueprint — GA + device-code auth to Graph"
+  print_explain "  Step 5: setup permissions — GA + admin consent"
+  print_explain "  Step 6: publish — Agent ID Developer, then manual upload"
   echo ""
 
   check_prereqs "Scenario D" az-login cli-version role-global-admin tunnel agent generated-config || return
@@ -667,26 +828,32 @@ pick_registration_class() {
   echo -e "  ${BOLD}Choose the registration class for the new parallel blueprint:${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}1)${RST}  Blueprint-only with OBO (M365)     ${DIM}— default, GA, least privilege${RST}"
+  echo -e "      ${DIM}Use when: the agent acts on behalf of a user (most common, simplest setup)${RST}"
   echo -e "      ${DIM}Command: a365 setup blueprint -n ... --m365${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer (or Global Admin)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}2)${RST}  Blueprint-only with S2S (M365)     ${DIM}— autonomous/headless agents${RST}"
+  echo -e "      ${DIM}Use when: the agent runs autonomously without a user session (scheduled jobs, background processing)${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode s2s${RST}"
   echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}(needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}3)${RST}  Blueprint-only with Both (M365)    ${DIM}— OBO + S2S hybrid${RST}"
+  echo -e "      ${DIM}Use when: the agent needs both user-driven AND autonomous flows (rare, complex)${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode both${RST}"
   echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}(needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}4)${RST}  AI Teammate (M365)                 ${DIM}— own Entra user identity${RST}"
+  echo -e "      ${DIM}Use when: the agent needs its own M365 identity (mailbox, calendar, Teams presence) in Copilot${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --aiteammate${RST}"
   echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license (needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}5)${RST}  AI Teammate (non-M365)             ${DIM}— Teams-only, no Copilot surface${RST}"
+  echo -e "      ${DIM}Use when: same as 4 but Teams-channel-only, no M365 Copilot surface${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --aiteammate${RST}"
   echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license (needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${MAGENTA}6)${RST}  Blueprint-based Non-DW (internal)  ${DIM}— Microsoft-internal pattern${RST}"
+  echo -e "      ${DIM}Use when: Microsoft told you to use this pattern (internal, not for external partners)${RST}"
   echo -e "      ${DIM}Command: a365 setup blueprint -n ... --m365  →  a365 publish --aiteammate --use-blueprint${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer${RST}"
   echo ""
@@ -779,18 +946,45 @@ scenario_e() {
   print_explain "the live one keeps serving Teams, the test one shows up as a new"
   print_explain "row in M365 Admin Center → Agents."
   echo ""
+  print_explain ""
+  print_explain "WHY: You want to test a different agent class (e.g., Blueprint-only"
+  print_explain "vs AI Teammate, OBO vs S2S) without touching your live registration."
+  print_explain "The -n flag creates a second blueprint under a different name —"
+  print_explain "both coexist in the tenant, both appear in M365 Admin Center → Agents."
+  print_explain ""
+  print_explain "HOW IT WORKS:"
+  print_explain "  1. The CLI's -n flag bypasses a365.config.json and uses the name"
+  print_explain "     you provide. It looks up the client app by display name"
+  print_explain "     'Agent 365 CLI' in your tenant."
+  print_explain "  2. A new Entra app registration is created for the parallel blueprint."
+  print_explain "  3. The new blueprint gets its own service principal, client secret,"
+  print_explain "     and (if AI Teammate) its own agentic-user identity."
+  print_explain "  4. The CLI stamps .env and a365.generated.config.json with the new"
+  print_explain "     blueprint's values — this script backs them up and restores after."
+  print_explain ""
+  print_explain "IMPORTANT:"
+  print_explain "  • Each new blueprint requires its own admin consent for Graph permissions."
+  print_explain "    The CLI opens a browser for this — approve when prompted."
+  print_explain "  • This script pre-authenticates to Microsoft Graph via PowerShell so the"
+  print_explain "    CLI can create the Entra app registration for the new blueprint."
+  print_explain "  • 'setup blueprint --m365' alone does NOT register the messaging"
+  print_explain "    endpoint — only the blueprint. Use 'setup all --m365' for full setup"
+  print_explain "    or run 'setup blueprint --endpoint-only --m365' separately."
+  echo ""
 
   # Class picker
   pick_registration_class
 
   # Dynamic prereqs based on class selection
   if $SELECTED_CLASS_NEEDS_GA; then
-    check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-global-admin tunnel agent || return
+    check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-global-admin tunnel agent pwsh client-app-name || return
   else
-    check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-agent-dev tunnel agent || return
+    check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-agent-dev tunnel agent pwsh client-app-name || return
   fi
 
   print_step 1 4 "Snapshot current state"
+  print_explain "WHY: Record the current live blueprint ID so you can verify both"
+  print_explain "registrations coexist after step 3."
   print_command "jq '{liveBlueprint: .agentBlueprintId}' a365.generated.config.json"
   if [[ -f a365.generated.config.json ]]; then
     run_or_skip "jq '{liveBlueprint: .agentBlueprintId}' a365.generated.config.json"
@@ -812,8 +1006,10 @@ scenario_e() {
   fi
 
   print_step 2 4 "Pre-authenticate to Microsoft Graph"
-  print_explain "The CLI needs a Graph session for blueprint creation."
-  print_explain "On macOS, browser auth may fail — PowerShell device code is the workaround."
+  print_explain "WHY: The a365 CLI needs to authenticate to Microsoft Graph to create"
+  print_explain "the Entra app registration for the new blueprint. This step establishes"
+  print_explain "a cached Graph session via PowerShell that the CLI picks up automatically."
+  print_explain "Without it, the CLI attempts browser-based auth which may not be available."
   if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
     print_command "pwsh -c \"Connect-MgGraph -TenantId '$PREFLIGHT_AZ_TENANT' -ClientId '$PREFLIGHT_CLIENT_APP_ID' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome\""
     run_or_skip_critical "pwsh -c \"Connect-MgGraph -TenantId '$PREFLIGHT_AZ_TENANT' -ClientId '$PREFLIGHT_CLIENT_APP_ID' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome\"" \
@@ -829,6 +1025,18 @@ scenario_e() {
 
   print_step 3 4 "Register second blueprint (${SELECTED_CLASS_NAME})"
   print_command "$setup_cmd"
+  print_explain "WHY: This is the actual registration. The -n flag tells the CLI to"
+  print_explain "create a standalone blueprint with the given name, bypassing the"
+  print_explain "project's a365.config.json. Your live blueprint is not touched."
+  print_explain ""
+  print_explain "WHAT HAPPENS: The CLI creates a new Entra app, service principal,"
+  print_explain "client secret, and (depending on class) agent identity. It then"
+  print_explain "opens a browser for admin consent on the new blueprint's Graph"
+  print_explain "permissions — approve when prompted."
+  print_explain ""
+  print_explain "⚠ SIDE EFFECT: The CLI overwrites .env and a365.generated.config.json"
+  print_explain "  in the current directory with the new blueprint's values. This script"
+  print_explain "  backed them up in step 1 and will restore them automatically."
   print_explain "-n bypasses the project config, so the live blueprint is not touched."
   print_explain "The CLI will print a new GUID — note it."
   print_explain "⚠ The CLI will overwrite .env and a365.generated.config.json — originals"
@@ -842,6 +1050,10 @@ scenario_e() {
     print_step "3b" 4 "Mark as Non-DW blueprint"
     local post_cmd="${SELECTED_CLASS_POST_CMD} -n \"$parallel_name\""
     print_command "$post_cmd"
+    print_explain "WHY: The 'Non-DW' (not a digital worker) variant requires a separate"
+    print_explain "publish step that flags the blueprint accordingly. This is a Microsoft-"
+    print_explain "internal pattern — the --aiteammate --use-blueprint flags on 'a365 publish'"
+    print_explain "mark the blueprint as blueprint-based, not AI Teammate."
     print_explain "Marks this blueprint as 'not a digital worker' — internal Microsoft pattern."
     run_or_skip_critical "$post_cmd" \
       "Non-DW publish failed" || { _restore_configs "$env_backup" "$gen_backup"; return; }
@@ -854,6 +1066,8 @@ scenario_e() {
   echo ""
 
   print_step 4 4 "Confirm both blueprints are visible"
+  print_explain "WHY: Confirm that both the live blueprint and the new parallel blueprint"
+  print_explain "are visible in the tenant. The query should show both names."
   print_command "a365 query-entra"
   local query_output
   if confirm "Run this command?"; then
