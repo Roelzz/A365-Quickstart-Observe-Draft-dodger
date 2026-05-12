@@ -191,8 +191,8 @@ run_or_skip() {
   if confirm "Run this command?"; then
     echo -e "    ${DIM}Running...${RST}"
     echo ""
-    eval "$cmd" 2>&1 | sed 's/^/    /'
-    local rc=${PIPESTATUS[0]}
+    eval "$cmd"
+    local rc=$?
     echo ""
     if [[ $rc -eq 0 ]]; then
       print_success "Command succeeded (exit $rc)"
@@ -212,8 +212,8 @@ run_or_skip_critical() {
   if confirm "Run this command?"; then
     echo -e "    ${DIM}Running...${RST}"
     echo ""
-    eval "$cmd" 2>&1 | sed 's/^/    /'
-    local rc=${PIPESTATUS[0]}
+    eval "$cmd"
+    local rc=$?
     echo ""
     if [[ $rc -eq 0 ]]; then
       print_success "Command succeeded (exit $rc)"
@@ -656,27 +656,27 @@ pick_registration_class() {
   echo -e "  ${BOLD}Choose the registration class for the new parallel blueprint:${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}1)${RST}  Blueprint-only with OBO (M365)     ${DIM}— default, GA, least privilege${RST}"
-  echo -e "      ${DIM}Command: a365 setup all -n ... --m365${RST}"
+  echo -e "      ${DIM}Command: a365 setup blueprint -n ... --m365${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer (or Global Admin)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}2)${RST}  Blueprint-only with S2S (M365)     ${DIM}— autonomous/headless agents${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode s2s${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}(needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}3)${RST}  Blueprint-only with Both (M365)    ${DIM}— OBO + S2S hybrid${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode both${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}(needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}4)${RST}  AI Teammate (M365)                 ${DIM}— own Entra user identity${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --aiteammate${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license (needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}5)${RST}  AI Teammate (non-M365)             ${DIM}— Teams-only, no Copilot surface${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --aiteammate${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license (needs clientAppId)${RST}"
   echo ""
   echo -e "  ${BOLD}${MAGENTA}6)${RST}  Blueprint-based Non-DW (internal)  ${DIM}— Microsoft-internal pattern${RST}"
-  echo -e "      ${DIM}Command: a365 setup all -n ... --m365  (then a365 publish --aiteammate --use-blueprint)${RST}"
+  echo -e "      ${DIM}Command: a365 setup blueprint -n ... --m365  →  a365 publish --aiteammate --use-blueprint${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer${RST}"
   echo ""
 
@@ -686,7 +686,7 @@ pick_registration_class() {
   case "${class_choice:-1}" in
     1)
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
-      SELECTED_CLASS_CMD="a365 setup all"
+      SELECTED_CLASS_CMD="a365 setup blueprint"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
@@ -726,7 +726,7 @@ pick_registration_class() {
       ;;
     6)
       SELECTED_CLASS_NAME="Blueprint-based Non-DW (internal)"
-      SELECTED_CLASS_CMD="a365 setup all"
+      SELECTED_CLASS_CMD="a365 setup blueprint"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
@@ -735,7 +735,7 @@ pick_registration_class() {
     *)
       echo -e "  ${RED}Invalid choice — defaulting to Blueprint-only OBO (M365).${RST}"
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
-      SELECTED_CLASS_CMD="a365 setup all"
+      SELECTED_CLASS_CMD="a365 setup blueprint"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
