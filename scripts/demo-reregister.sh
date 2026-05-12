@@ -829,7 +829,7 @@ pick_registration_class() {
   echo ""
   echo -e "  ${BOLD}${GREEN}1)${RST}  Blueprint-only with OBO (M365)     ${DIM}— default, GA, least privilege${RST}"
   echo -e "      ${DIM}Use when: the agent acts on behalf of a user (most common, simplest setup)${RST}"
-  echo -e "      ${DIM}Command: a365 setup blueprint -n ... --m365${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer (or Global Admin)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}2)${RST}  Blueprint-only with S2S (M365)     ${DIM}— autonomous/headless agents${RST}"
@@ -854,7 +854,7 @@ pick_registration_class() {
   echo ""
   echo -e "  ${BOLD}${MAGENTA}6)${RST}  Blueprint-based Non-DW (internal)  ${DIM}— Microsoft-internal pattern${RST}"
   echo -e "      ${DIM}Use when: Microsoft told you to use this pattern (internal, not for external partners)${RST}"
-  echo -e "      ${DIM}Command: a365 setup blueprint -n ... --m365  →  a365 publish --aiteammate --use-blueprint${RST}"
+  echo -e "      ${DIM}Command: a365 setup all -n ... --m365  →  a365 publish --aiteammate --use-blueprint${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer${RST}"
   echo ""
 
@@ -864,7 +864,7 @@ pick_registration_class() {
   case "${class_choice:-1}" in
     1)
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
-      SELECTED_CLASS_CMD="a365 setup blueprint"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
@@ -904,7 +904,7 @@ pick_registration_class() {
       ;;
     6)
       SELECTED_CLASS_NAME="Blueprint-based Non-DW (internal)"
-      SELECTED_CLASS_CMD="a365 setup blueprint"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
@@ -913,7 +913,7 @@ pick_registration_class() {
     *)
       echo -e "  ${RED}Invalid choice — defaulting to Blueprint-only OBO (M365).${RST}"
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
-      SELECTED_CLASS_CMD="a365 setup blueprint"
+      SELECTED_CLASS_CMD="a365 setup all"
       SELECTED_CLASS_FLAGS="--m365"
       SELECTED_CLASS_ROLE="Agent ID Developer"
       SELECTED_CLASS_NEEDS_GA=false
