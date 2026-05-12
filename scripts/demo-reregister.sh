@@ -63,6 +63,71 @@ set -a
 source .env
 set +a
 
+# ── Extended pre-flight (non-blocking warnings) ─────────────────────────────
+PREFLIGHT_AZ_OK=false
+PREFLIGHT_AZ_TENANT=""
+PREFLIGHT_AZ_USER=""
+PREFLIGHT_CLI_VERSION=""
+PREFLIGHT_CLI_OK=false
+PREFLIGHT_AGENT_OK=false
+PREFLIGHT_TUNNEL_OK=false
+
+echo ""
+echo -e "${BOLD}Pre-flight checks...${RST}"
+
+# Azure CLI login
+if az account show &>/dev/null; then
+  PREFLIGHT_AZ_OK=true
+  PREFLIGHT_AZ_TENANT=$(az account show --query tenantId -o tsv 2>/dev/null)
+  PREFLIGHT_AZ_USER=$(az account show --query user.name -o tsv 2>/dev/null)
+  echo -e "  ${GREEN}✔${RST} Azure CLI: logged in as ${BOLD}${PREFLIGHT_AZ_USER}${RST} (tenant ${DIM}${PREFLIGHT_AZ_TENANT}${RST})"
+else
+  echo -e "  ${RED}✗${RST} Azure CLI: not logged in — run ${CYAN}az login --tenant <tenantId>${RST}"
+fi
+
+# a365 CLI version (need ≥ 1.1.174)
+PREFLIGHT_CLI_VERSION=$(a365 --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+if [[ "$PREFLIGHT_CLI_VERSION" != "unknown" ]]; then
+  cli_major=$(echo "$PREFLIGHT_CLI_VERSION" | cut -d. -f1)
+  cli_minor=$(echo "$PREFLIGHT_CLI_VERSION" | cut -d. -f2)
+  cli_patch=$(echo "$PREFLIGHT_CLI_VERSION" | cut -d. -f3)
+  if [[ "$cli_major" -gt 1 ]] || [[ "$cli_major" -eq 1 && "$cli_minor" -gt 1 ]] || \
+     [[ "$cli_major" -eq 1 && "$cli_minor" -eq 1 && "$cli_patch" -ge 174 ]]; then
+    PREFLIGHT_CLI_OK=true
+    echo -e "  ${GREEN}✔${RST} a365 CLI: v${PREFLIGHT_CLI_VERSION}"
+  else
+    echo -e "  ${YELLOW}⚠${RST} a365 CLI: v${PREFLIGHT_CLI_VERSION} — need ≥ 1.1.174 (endpoint registration bug in older versions)"
+  fi
+else
+  echo -e "  ${YELLOW}⚠${RST} a365 CLI: could not determine version"
+fi
+
+# Agent service on localhost:3978
+if curl -sf http://localhost:3978/api/health &>/dev/null || curl -sf http://localhost:3978 &>/dev/null; then
+  PREFLIGHT_AGENT_OK=true
+  echo -e "  ${GREEN}✔${RST} Agent service: running on :3978"
+else
+  echo -e "  ${YELLOW}⚠${RST} Agent service: not responding on :3978 — run ${CYAN}uv run python start_with_generic_host.py${RST}"
+fi
+
+# Tunnel reachability
+TUNNEL_ENDPOINT=$(jq -r '.messagingEndpoint // ""' a365.config.json 2>/dev/null)
+if [[ -n "$TUNNEL_ENDPOINT" && "$TUNNEL_ENDPOINT" != "null" ]]; then
+  TUNNEL_BASE="${TUNNEL_ENDPOINT%/api/messages}"
+  if curl -sf --max-time 5 "$TUNNEL_BASE" &>/dev/null || curl -sf --max-time 5 "${TUNNEL_BASE}/api/health" &>/dev/null; then
+    PREFLIGHT_TUNNEL_OK=true
+    echo -e "  ${GREEN}✔${RST} Tunnel: reachable at ${DIM}${TUNNEL_BASE}${RST}"
+  else
+    echo -e "  ${YELLOW}⚠${RST} Tunnel: not reachable at ${DIM}${TUNNEL_BASE}${RST} — run ${CYAN}devtunnel host a365-draft-dodger${RST}"
+  fi
+else
+  echo -e "  ${YELLOW}⚠${RST} Tunnel: no messagingEndpoint in a365.config.json"
+fi
+
+echo ""
+echo -e "${DIM}Press Enter to continue to menu...${RST}"
+read -r
+
 # ── Helper functions ─────────────────────────────────────────────────────────
 
 print_banner() {
@@ -139,6 +204,98 @@ run_or_skip() {
     echo -e "    ${DIM}Skipped.${RST}"
     return 0
   fi
+}
+
+run_or_skip_critical() {
+  local cmd="$1"
+  local fail_msg="${2:-Command failed — aborting scenario.}"
+  if confirm "Run this command?"; then
+    echo -e "    ${DIM}Running...${RST}"
+    echo ""
+    eval "$cmd" 2>&1 | sed 's/^/    /'
+    local rc=${PIPESTATUS[0]}
+    echo ""
+    if [[ $rc -eq 0 ]]; then
+      print_success "Command succeeded (exit $rc)"
+      return 0
+    else
+      print_warning "$fail_msg (exit $rc)"
+      echo ""
+      print_info "Fix the issue and try this scenario again."
+      CURRENT_STEP=""
+      pause_for_menu
+      return 1
+    fi
+  else
+    echo -e "    ${DIM}Skipped — treating as abort for this scenario.${RST}"
+    CURRENT_STEP=""
+    pause_for_menu
+    return 1
+  fi
+}
+
+check_prereqs() {
+  local scenario="$1"
+  shift
+  echo -e "  ${BOLD}Prerequisites for $scenario:${RST}"
+  local all_ok=true
+  while [[ $# -gt 0 ]]; do
+    local check="$1"; shift
+    case "$check" in
+      az-login)
+        if $PREFLIGHT_AZ_OK; then
+          echo -e "    ${GREEN}✔${RST} Azure CLI logged in (${PREFLIGHT_AZ_USER})"
+        else
+          echo -e "    ${RED}✗${RST} Azure CLI — run: ${CYAN}az login --tenant <tenantId>${RST}"
+          all_ok=false
+        fi ;;
+      tunnel)
+        if $PREFLIGHT_TUNNEL_OK; then
+          echo -e "    ${GREEN}✔${RST} Tunnel reachable"
+        else
+          echo -e "    ${YELLOW}⚠${RST} Tunnel not confirmed — ${CYAN}devtunnel host a365-draft-dodger${RST}"
+        fi ;;
+      agent)
+        if $PREFLIGHT_AGENT_OK; then
+          echo -e "    ${GREEN}✔${RST} Agent service running on :3978"
+        else
+          echo -e "    ${YELLOW}⚠${RST} Agent not responding — ${CYAN}uv run python start_with_generic_host.py${RST}"
+        fi ;;
+      cli-version)
+        if $PREFLIGHT_CLI_OK; then
+          echo -e "    ${GREEN}✔${RST} a365 CLI ≥ 1.1.174 (v${PREFLIGHT_CLI_VERSION})"
+        else
+          echo -e "    ${YELLOW}⚠${RST} a365 CLI version not confirmed (v${PREFLIGHT_CLI_VERSION})"
+        fi ;;
+      role-agent-dev)
+        echo -e "    ${BLUE}🔑${RST} Entra role: ${BOLD}Agent ID Developer${RST} (or Global Admin)" ;;
+      role-global-admin)
+        echo -e "    ${BLUE}🔑${RST} Entra role: ${BOLD}Global Administrator${RST} required" ;;
+      generated-config)
+        if [[ -f a365.generated.config.json ]]; then
+          echo -e "    ${GREEN}✔${RST} a365.generated.config.json exists"
+        else
+          echo -e "    ${YELLOW}⚠${RST} a365.generated.config.json not found (not yet registered)"
+        fi ;;
+      manifest)
+        if [[ -f manifest/manifest.json ]]; then
+          echo -e "    ${GREEN}✔${RST} manifest/manifest.json exists"
+        else
+          echo -e "    ${RED}✗${RST} manifest/manifest.json not found"
+          all_ok=false
+        fi ;;
+    esac
+  done
+  echo ""
+  if ! $all_ok; then
+    echo -e "  ${RED}Some prerequisites are not met.${RST}"
+    if ! confirm "Continue anyway?"; then
+      CURRENT_STEP=""
+      pause_for_menu
+      return 1
+    fi
+  fi
+  return 0
 }
 
 pause_for_menu() {
@@ -282,9 +439,10 @@ scenario_a() {
   print_explain "ID, same agentic-user identities, same Teams installs."
   echo ""
 
+  check_prereqs "Scenario A" az-login cli-version role-agent-dev generated-config || return
+
   print_step 1 2 "Confirm current endpoint"
   print_command "jq -r '.messagingEndpoint' a365.config.json"
-  print_prereq "a365.config.json must exist"
   run_or_skip "jq -r '.messagingEndpoint' a365.config.json"
   echo ""
 
@@ -292,10 +450,10 @@ scenario_a() {
   local endpoint
   endpoint=$(get_live_endpoint)
   print_command "a365 setup blueprint --m365 --update-endpoint \"$endpoint\""
-  print_auth "az login (interactive once per boot)"
   print_explain "⚠ --m365 is REQUIRED. Without it the command silently no-ops."
   print_explain "See LESSONS_LEARNED.md §5.1."
-  run_or_skip "a365 setup blueprint --m365 --update-endpoint \"$endpoint\""
+  run_or_skip_critical "a365 setup blueprint --m365 --update-endpoint \"$endpoint\"" \
+    "Endpoint update failed" || return
 
   echo ""
   print_info "Verification: send one Teams turn. Agent log should show"
@@ -315,19 +473,30 @@ scenario_b() {
   print_explain "and need the change to surface in M365 Admin Center."
   echo ""
 
+  check_prereqs "Scenario B" az-login cli-version role-agent-dev manifest || return
+
   print_step 1 4 "Snapshot current manifest"
   print_command "cp manifest/manifest.json manifest/manifest.json.bak"
-  print_prereq "manifest/manifest.json must exist"
   run_or_skip "cp manifest/manifest.json manifest/manifest.json.bak"
   echo ""
 
   print_step 2 4 "Re-publish manifest"
   print_command "a365 publish"
-  print_auth "az login"
   print_explain "⚠ a365 publish overwrites your custom description with a placeholder."
   print_explain "See LESSONS_LEARNED.md §5.2."
-  run_or_skip "a365 publish"
+  run_or_skip_critical "a365 publish" "Manifest publish failed" || return
   echo ""
+
+  # Post-validation: check manifest.zip exists with recent timestamp
+  if [[ -f manifest/manifest.zip ]]; then
+    local zip_age
+    zip_age=$(( $(date +%s) - $(stat -f %m manifest/manifest.zip 2>/dev/null || stat -c %Y manifest/manifest.zip 2>/dev/null) ))
+    if [[ $zip_age -lt 60 ]]; then
+      print_success "manifest.zip updated (${zip_age}s ago)"
+    else
+      print_warning "manifest.zip exists but is ${zip_age}s old — may not have been refreshed"
+    fi
+  fi
 
   print_step 3 4 "Re-edit manifest and re-zip"
   print_command "\$EDITOR manifest/manifest.json"
@@ -346,7 +515,7 @@ scenario_b() {
   print_step 4 4 "Upload to M365 Admin Center"
   print_explain "Upload manifest/manifest.zip at:"
   print_explain "https://admin.microsoft.com → Agents → All agents → Upload custom agent"
-  print_auth "Global Admin or Agent ID Developer role"
+  echo -e "    ${BLUE}🔑${RST} Requires: ${BOLD}Global Admin or Agent ID Developer role${RST}"
   print_info "This step is manual — the CLI no longer auto-uploads (1.1.174+)."
 
   echo ""
@@ -365,16 +534,18 @@ scenario_c() {
   print_explain "permission via Graph PowerShell and need the CLI's record to match."
   echo ""
 
+  check_prereqs "Scenario C" az-login cli-version role-global-admin generated-config || return
+
   print_step 1 2 "Re-grant MCP permissions"
   print_command "a365 setup permissions mcp"
-  print_auth "az login + admin consent (if non-GA role, a Global Admin must visit the printed URL)"
-  run_or_skip "a365 setup permissions mcp"
+  print_explain "If you're not Global Admin, the CLI prints an admin-consent URL"
+  print_explain "that a Global Admin must visit to approve."
+  run_or_skip_critical "a365 setup permissions mcp" "MCP permissions grant failed" || return
   echo ""
 
   print_step 2 2 "Re-grant Bot permissions"
   print_command "a365 setup permissions bot"
-  print_auth "az login"
-  run_or_skip "a365 setup permissions bot"
+  run_or_skip_critical "a365 setup permissions bot" "Bot permissions grant failed" || return
 
   echo ""
   print_info "Verification: trigger a Teams turn. AADSTS65001 errors should stop."
@@ -399,6 +570,8 @@ scenario_d() {
   print_explain "What survives: repo code, dev-tunnel URL, .env (except client secret)."
   echo ""
 
+  check_prereqs "Scenario D" az-login cli-version role-global-admin tunnel agent generated-config || return
+
   echo -e "    ${RED}${BOLD}Type 'i understand' to continue (anything else aborts):${RST}"
   read -r -p "    > " gate_answer
   if [[ "$gate_answer" != "i understand" ]]; then
@@ -411,7 +584,6 @@ scenario_d() {
 
   print_step 1 6 "Snapshot current state (mandatory)"
   print_command "cp a365.generated.config.json a365.generated.config.json.bak-\$(date +%Y%m%d)"
-  print_prereq "a365.generated.config.json must exist"
   if [[ -f a365.generated.config.json ]]; then
     run_or_skip "cp a365.generated.config.json \"a365.generated.config.json.bak-\$(date +%Y%m%d)\""
     echo ""
@@ -425,30 +597,35 @@ scenario_d() {
 
   print_step 2 6 "Destroy the existing blueprint"
   print_command "a365 cleanup blueprint -y"
-  print_auth "az login"
   print_explain "Deletes: Entra app + service principal + endpoint + blueprint metadata."
-  run_or_skip "a365 cleanup blueprint -y"
+  run_or_skip_critical "a365 cleanup blueprint -y" "Blueprint cleanup failed" || return
   echo ""
 
   print_step 3 6 "Remove agentic-user identities"
   print_command "a365 cleanup instance -y"
-  print_auth "az login"
   print_explain "Each user gets a new agentic-user the first time they engage."
   run_or_skip "a365 cleanup instance -y"
   echo ""
 
   print_step 4 6 "Re-create blueprint"
   print_command "a365 setup blueprint --m365"
-  print_auth "az login + device-code prompt for permissions"
-  print_prereq "Tunnel running on :3978 so the CLI can probe the endpoint"
   print_explain "Use whatever flags you actually want this time (--aiteammate etc)."
-  run_or_skip "a365 setup blueprint --m365"
+  run_or_skip_critical "a365 setup blueprint --m365" "Blueprint setup failed — see RE-REGISTRATION.md §D rollback" || return
   echo ""
+
+  # Post-validation: check new blueprint ID
+  if [[ -f a365.generated.config.json ]]; then
+    local new_id
+    new_id=$(jq -r '.agentBlueprintId // ""' a365.generated.config.json)
+    if [[ -n "$new_id" && "$new_id" != "null" ]]; then
+      print_success "New blueprint ID: $new_id"
+    fi
+  fi
 
   print_step 5 6 "Re-grant permissions"
   print_command "a365 setup permissions mcp && a365 setup permissions bot"
-  print_auth "az login + admin consent if non-GA"
-  run_or_skip "a365 setup permissions mcp && a365 setup permissions bot"
+  run_or_skip_critical "a365 setup permissions mcp && a365 setup permissions bot" \
+    "Permissions grant failed" || return
   echo ""
 
   print_step 6 6 "Re-publish manifest"
@@ -473,6 +650,95 @@ scenario_d() {
   pause_for_menu
 }
 
+# ── Registration class picker ────────────────────────────────────────────────
+
+pick_registration_class() {
+  echo -e "  ${BOLD}Choose the registration class for the new parallel blueprint:${RST}"
+  echo ""
+  echo -e "  ${BOLD}${GREEN}1)${RST}  Blueprint-only with OBO (M365)     ${DIM}— default, GA, least privilege${RST}"
+  echo -e "      ${DIM}Flags: --m365${RST}"
+  echo -e "      ${DIM}Role:  Agent ID Developer (or Global Admin)${RST}"
+  echo ""
+  echo -e "  ${BOLD}${GREEN}2)${RST}  Blueprint-only with S2S (M365)     ${DIM}— autonomous/headless agents${RST}"
+  echo -e "      ${DIM}Flags: --m365 --authmode s2s${RST}"
+  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}"
+  echo ""
+  echo -e "  ${BOLD}${GREEN}3)${RST}  Blueprint-only with Both (M365)    ${DIM}— OBO + S2S hybrid${RST}"
+  echo -e "      ${DIM}Flags: --m365 --authmode both${RST}"
+  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}"
+  echo ""
+  echo -e "  ${BOLD}${CYAN}4)${RST}  AI Teammate (M365)                 ${DIM}— own Entra user identity${RST}"
+  echo -e "      ${DIM}Flags: --m365 --aiteammate true${RST}"
+  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
+  echo ""
+  echo -e "  ${BOLD}${CYAN}5)${RST}  AI Teammate (non-M365)             ${DIM}— Teams-only, no Copilot surface${RST}"
+  echo -e "      ${DIM}Flags: --aiteammate true${RST}"
+  echo -e "      ${DIM}Role:  ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license for agentic user${RST}"
+  echo ""
+  echo -e "  ${BOLD}${MAGENTA}6)${RST}  Blueprint-based Non-DW (internal)  ${DIM}— Microsoft-internal pattern${RST}"
+  echo -e "      ${DIM}Flags: --m365 --aiteammate false --use-blueprint${RST}"
+  echo -e "      ${DIM}Role:  Agent ID Developer${RST}"
+  echo ""
+
+  echo -ne "  ${BOLD}Choose class [1-6, default=1]:${RST} "
+  read -r class_choice
+
+  case "${class_choice:-1}" in
+    1)
+      SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
+      SELECTED_CLASS_FLAGS="--m365"
+      SELECTED_CLASS_ROLE="Agent ID Developer"
+      SELECTED_CLASS_NEEDS_GA=false
+      ;;
+    2)
+      SELECTED_CLASS_NAME="Blueprint-only S2S (M365)"
+      SELECTED_CLASS_FLAGS="--m365 --authmode s2s"
+      SELECTED_CLASS_ROLE="Global Administrator"
+      SELECTED_CLASS_NEEDS_GA=true
+      ;;
+    3)
+      SELECTED_CLASS_NAME="Blueprint-only Both (M365)"
+      SELECTED_CLASS_FLAGS="--m365 --authmode both"
+      SELECTED_CLASS_ROLE="Global Administrator"
+      SELECTED_CLASS_NEEDS_GA=true
+      ;;
+    4)
+      SELECTED_CLASS_NAME="AI Teammate (M365)"
+      SELECTED_CLASS_FLAGS="--m365 --aiteammate true"
+      SELECTED_CLASS_ROLE="Global Administrator + M365 license"
+      SELECTED_CLASS_NEEDS_GA=true
+      ;;
+    5)
+      SELECTED_CLASS_NAME="AI Teammate (non-M365)"
+      SELECTED_CLASS_FLAGS="--aiteammate true"
+      SELECTED_CLASS_ROLE="Global Administrator + M365 license"
+      SELECTED_CLASS_NEEDS_GA=true
+      ;;
+    6)
+      SELECTED_CLASS_NAME="Blueprint-based Non-DW (internal)"
+      SELECTED_CLASS_FLAGS="--m365 --aiteammate false --use-blueprint"
+      SELECTED_CLASS_ROLE="Agent ID Developer"
+      SELECTED_CLASS_NEEDS_GA=false
+      ;;
+    *)
+      echo -e "  ${RED}Invalid choice — defaulting to Blueprint-only OBO (M365).${RST}"
+      SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
+      SELECTED_CLASS_FLAGS="--m365"
+      SELECTED_CLASS_ROLE="Agent ID Developer"
+      SELECTED_CLASS_NEEDS_GA=false
+      ;;
+  esac
+
+  echo ""
+  echo -e "  ${GREEN}✔${RST} Selected: ${BOLD}${SELECTED_CLASS_NAME}${RST}"
+  echo -e "    Flags: ${CYAN}${SELECTED_CLASS_FLAGS}${RST}"
+  echo -e "    Role:  ${SELECTED_CLASS_ROLE}"
+  if $SELECTED_CLASS_NEEDS_GA; then
+    echo -e "    ${YELLOW}⚠ This class requires Global Administrator.${RST}"
+  fi
+  echo ""
+}
+
 # ── Scenario E — Side-by-side parallel (DEMO DEFAULT) ────────────────────────
 
 scenario_e() {
@@ -486,9 +752,18 @@ scenario_e() {
   print_explain "row in M365 Admin Center → Agents."
   echo ""
 
+  # Class picker
+  pick_registration_class
+
+  # Dynamic prereqs based on class selection
+  if $SELECTED_CLASS_NEEDS_GA; then
+    check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-global-admin tunnel agent || return
+  else
+    check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-agent-dev tunnel agent || return
+  fi
+
   print_step 1 3 "Snapshot current state"
   print_command "jq '{liveBlueprint: .agentBlueprintId}' a365.generated.config.json"
-  print_prereq "a365.generated.config.json must exist"
   if [[ -f a365.generated.config.json ]]; then
     run_or_skip "jq '{liveBlueprint: .agentBlueprintId}' a365.generated.config.json"
   else
@@ -496,19 +771,34 @@ scenario_e() {
   fi
   echo ""
 
-  print_step 2 3 "Register second blueprint"
-  print_command "a365 setup blueprint -n \"$parallel_name\" --m365"
-  print_auth "az login + 1 device-code prompt for permissions"
-  print_prereq "Tunnel running on :3978 so the CLI can probe the endpoint"
+  local setup_cmd="a365 setup blueprint -n \"$parallel_name\" $SELECTED_CLASS_FLAGS"
+
+  print_step 2 3 "Register second blueprint (${SELECTED_CLASS_NAME})"
+  print_command "$setup_cmd"
   print_explain "-n bypasses the project config, so the live blueprint is not touched."
   print_explain "The CLI will print a new GUID — note it."
-  run_or_skip "a365 setup blueprint -n \"$parallel_name\" --m365"
+  run_or_skip_critical "$setup_cmd" \
+    "Blueprint registration failed — check tunnel, auth, and CLI version" || return
   echo ""
 
   print_step 3 3 "Confirm both blueprints are visible"
-  print_command "a365 query-entra | jq '.blueprints[] | {name, id}'"
-  print_auth "az login"
-  run_or_skip "a365 query-entra | jq '.blueprints[] | {name, id}' 2>/dev/null || a365 query-entra"
+  print_command "a365 query-entra"
+  local query_output
+  if confirm "Run this command?"; then
+    echo -e "    ${DIM}Running...${RST}"
+    echo ""
+    query_output=$(a365 query-entra 2>&1) || true
+    echo "$query_output" | sed 's/^/    /'
+    echo ""
+    # Post-validation: check if parallel name appears in output
+    if echo "$query_output" | grep -qi "$parallel_name" 2>/dev/null; then
+      print_success "Found '$parallel_name' in query results"
+    else
+      print_warning "'$parallel_name' not found in query results — check M365 Admin Center manually"
+    fi
+  else
+    echo -e "    ${DIM}Skipped.${RST}"
+  fi
 
   echo ""
   print_info "Both blueprints should now be visible in M365 Admin Center → Agents."
