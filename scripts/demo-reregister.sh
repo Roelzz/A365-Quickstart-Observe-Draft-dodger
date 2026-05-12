@@ -824,44 +824,126 @@ scenario_d() {
 
 # ── Registration class picker ────────────────────────────────────────────────
 
+explain_auth_modes() {
+  echo -e "  ${BOLD}Understanding the two authentication modes:${RST}"
+  echo ""
+  echo -e "  ${BOLD}${CYAN}OBO (On-Behalf-Of)${RST}"
+  echo -e "  ${DIM}The agent borrows the calling user's token. It can only do what that${RST}"
+  echo -e "  ${DIM}user can do. Audit logs show the user as the actor. No admin consent${RST}"
+  echo -e "  ${DIM}needed — the user consents on first use. Least privilege, most common.${RST}"
+  echo ""
+  echo -e "  ${BOLD}${CYAN}S2S (Server-to-Server)${RST}"
+  echo -e "  ${DIM}The agent authenticates as itself using app permissions. It can act${RST}"
+  echo -e "  ${DIM}without a user session (scheduled jobs, background processing). Audit${RST}"
+  echo -e "  ${DIM}logs show the agent as the actor. Requires Global Admin to consent.${RST}"
+  echo ""
+  echo -e "  ${BOLD}Key trade-offs:${RST}"
+  echo -e "  ┌──────────────────────┬──────────────────────┬──────────────────────┐"
+  echo -e "  │                      │ ${BOLD}OBO${RST}                  │ ${BOLD}S2S${RST}                  │"
+  echo -e "  ├──────────────────────┼──────────────────────┼──────────────────────┤"
+  echo -e "  │ Auth                 │ User token exchange  │ Client credentials   │"
+  echo -e "  │ Consent              │ User consents        │ ${YELLOW}Admin must consent${RST}   │"
+  echo -e "  │ Runs without user?   │ No                   │ ${GREEN}Yes${RST}                  │"
+  echo -e "  │ Audit trail          │ Shows user as actor  │ Shows agent as actor │"
+  echo -e "  │ Blast radius         │ Limited to user perms│ ${YELLOW}Tenant-wide${RST}          │"
+  echo -e "  │ Min. Entra role      │ Agent ID Developer   │ ${YELLOW}Global Admin${RST}          │"
+  echo -e "  └──────────────────────┴──────────────────────┴──────────────────────┘"
+  echo ""
+}
+
+guided_class_selection() {
+  echo -e "  ${BOLD}Let's find the right class for your agent:${RST}"
+  echo ""
+
+  echo -e "  ${BOLD}Q1:${RST} Does your agent need its own M365 identity (mailbox, calendar, Teams presence)?"
+  echo -ne "      ${DIM}[y/N]:${RST} "
+  read -r q1
+  echo ""
+
+  if [[ "$q1" =~ ^[yY] ]]; then
+    echo -e "  ${BOLD}Q2:${RST} Should it appear in M365 Copilot, or Teams channels only?"
+    echo -ne "      ${DIM}[c=Copilot / t=Teams only]:${RST} "
+    read -r q2
+    echo ""
+    if [[ "$q2" =~ ^[tT] ]]; then
+      echo -e "  ${GREEN}→ Recommended: ${BOLD}5) AI Teammate (non-M365)${RST}"
+      echo -e "    ${DIM}Teams-channel-only. Own Entra user. Requires GA + M365 license.${RST}"
+      GUIDED_RECOMMENDATION=5
+    else
+      echo -e "  ${GREEN}→ Recommended: ${BOLD}4) AI Teammate (M365)${RST}"
+      echo -e "    ${DIM}Full Copilot integration. Own mailbox + Teams presence. Requires GA + M365 license.${RST}"
+      GUIDED_RECOMMENDATION=4
+    fi
+  else
+    echo -e "  ${BOLD}Q2:${RST} Does the agent need to run autonomously (no user session)?"
+    echo -ne "      ${DIM}[y/N]:${RST} "
+    read -r q2b
+    echo ""
+    if [[ "$q2b" =~ ^[yY] ]]; then
+      echo -e "  ${GREEN}→ Recommended: ${BOLD}2) Blueprint-only S2S (M365)${RST}"
+      echo -e "    ${DIM}Agent authenticates as itself. Runs headless. Requires Global Admin.${RST}"
+      GUIDED_RECOMMENDATION=2
+    else
+      echo -e "  ${GREEN}→ Recommended: ${BOLD}1) Blueprint-only OBO (M365)${RST}"
+      echo -e "    ${DIM}Agent acts on behalf of user. Simplest setup, least privilege. GA default.${RST}"
+      GUIDED_RECOMMENDATION=1
+    fi
+  fi
+  echo ""
+  echo -e "  ${DIM}You can accept this recommendation or pick any class from the menu below.${RST}"
+  echo ""
+}
+
 pick_registration_class() {
-  echo -e "  ${BOLD}Choose the registration class for the new parallel blueprint:${RST}"
+  explain_auth_modes
+  guided_class_selection
+
+  echo -e "  ${BOLD}All registration classes:${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}1)${RST}  Blueprint-only with OBO (M365)     ${DIM}— default, GA, least privilege${RST}"
   echo -e "      ${DIM}Use when: the agent acts on behalf of a user (most common, simplest setup)${RST}"
+  echo -e "      ${DIM}Creates:  Entra app + service principal. No agentic user.${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer (or Global Admin)${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}2)${RST}  Blueprint-only with S2S (M365)     ${DIM}— autonomous/headless agents${RST}"
-  echo -e "      ${DIM}Use when: the agent runs autonomously without a user session (scheduled jobs, background processing)${RST}"
+  echo -e "      ${DIM}Use when: the agent runs autonomously without a user session${RST}"
+  echo -e "      ${DIM}Creates:  Entra app + SP + app-permission grants (tenant-wide).${RST}"
+  echo -e "      ${DIM}Trade-off: powerful but broad blast radius — every scope is tenant-wide.${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode s2s${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}(needs clientAppId)${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}"
   echo ""
   echo -e "  ${BOLD}${GREEN}3)${RST}  Blueprint-only with Both (M365)    ${DIM}— OBO + S2S hybrid${RST}"
-  echo -e "      ${DIM}Use when: the agent needs both user-driven AND autonomous flows (rare, complex)${RST}"
+  echo -e "      ${DIM}Use when: the agent needs both user-driven AND autonomous flows${RST}"
+  echo -e "      ${DIM}Creates:  Entra app + SP + both delegated and app-permission grants.${RST}"
+  echo -e "      ${DIM}Trade-off: rarely necessary. Consider two separate agents instead.${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --authmode both${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}(needs clientAppId)${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}4)${RST}  AI Teammate (M365)                 ${DIM}— own Entra user identity${RST}"
-  echo -e "      ${DIM}Use when: the agent needs its own M365 identity (mailbox, calendar, Teams presence) in Copilot${RST}"
+  echo -e "      ${DIM}Use when: the agent needs its own M365 identity in Copilot${RST}"
+  echo -e "      ${DIM}Creates:  Entra app + SP + agentic user (UPN, mailbox, Teams presence).${RST}"
+  echo -e "      ${DIM}Trade-off: most capable but needs M365 license + GA. Cleanup destroys user.${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365 --aiteammate${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license (needs clientAppId)${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license${RST}"
   echo ""
   echo -e "  ${BOLD}${CYAN}5)${RST}  AI Teammate (non-M365)             ${DIM}— Teams-only, no Copilot surface${RST}"
   echo -e "      ${DIM}Use when: same as 4 but Teams-channel-only, no M365 Copilot surface${RST}"
+  echo -e "      ${DIM}Creates:  Same as 4 but endpoint registered via Teams Dev Portal, not MCP.${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --aiteammate${RST}"
-  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license (needs clientAppId)${RST}"
+  echo -e "      ${DIM}Role:    ${YELLOW}Global Administrator required${RST}  ${DIM}+ M365 license${RST}"
   echo ""
   echo -e "  ${BOLD}${MAGENTA}6)${RST}  Blueprint-based Non-DW (internal)  ${DIM}— Microsoft-internal pattern${RST}"
-  echo -e "      ${DIM}Use when: Microsoft told you to use this pattern (internal, not for external partners)${RST}"
+  echo -e "      ${DIM}Use when: Microsoft told you to use this pattern${RST}"
+  echo -e "      ${DIM}Creates:  Entra app + SP. Flagged as 'not a digital worker'.${RST}"
   echo -e "      ${DIM}Command: a365 setup all -n ... --m365  →  a365 publish --aiteammate --use-blueprint${RST}"
   echo -e "      ${DIM}Role:    Agent ID Developer${RST}"
   echo ""
 
-  echo -ne "  ${BOLD}Choose class [1-6, default=1]:${RST} "
+  echo -ne "  ${BOLD}Choose class [1-6, default=${GUIDED_RECOMMENDATION}]:${RST} "
   read -r class_choice
 
-  case "${class_choice:-1}" in
+  case "${class_choice:-$GUIDED_RECOMMENDATION}" in
     1)
       SELECTED_CLASS_NAME="Blueprint-only OBO (M365)"
       SELECTED_CLASS_CMD="a365 setup all"
@@ -937,20 +1019,12 @@ pick_registration_class() {
 # ── Scenario E — Side-by-side parallel (DEMO DEFAULT) ────────────────────────
 
 scenario_e() {
-  local parallel_name
-  parallel_name=$(get_demo_parallel_name)
-
   print_banner "Scenario E — Side-by-side Parallel Registration (non-destructive)"
-  print_explain "Registers a second blueprint with -n '$parallel_name' bypassing"
-  print_explain "a365.config.json. Both blueprints coexist in your tenant —"
-  print_explain "the live one keeps serving Teams, the test one shows up as a new"
-  print_explain "row in M365 Admin Center → Agents."
+  print_explain "Registers a second blueprint alongside your live one. Both coexist"
+  print_explain "in the tenant, both appear in M365 Admin Center → Agents."
   echo ""
-  print_explain ""
   print_explain "WHY: You want to test a different agent class (e.g., Blueprint-only"
   print_explain "vs AI Teammate, OBO vs S2S) without touching your live registration."
-  print_explain "The -n flag creates a second blueprint under a different name —"
-  print_explain "both coexist in the tenant, both appear in M365 Admin Center → Agents."
   print_explain ""
   print_explain "HOW IT WORKS:"
   print_explain "  1. The CLI's -n flag bypasses a365.config.json and uses the name"
@@ -967,12 +1041,22 @@ scenario_e() {
   print_explain "    The CLI opens a browser for this — approve when prompted."
   print_explain "  • This script pre-authenticates to Microsoft Graph via PowerShell so the"
   print_explain "    CLI can create the Entra app registration for the new blueprint."
-  print_explain "  • 'setup blueprint --m365' alone does NOT register the messaging"
-  print_explain "    endpoint — only the blueprint. Use 'setup all --m365' for full setup"
-  print_explain "    or run 'setup blueprint --endpoint-only --m365' separately."
   echo ""
 
-  # Class picker
+  # Name prompt
+  local default_name
+  default_name=$(get_demo_parallel_name)
+  echo -e "  ${BOLD}Name for the new parallel blueprint:${RST}"
+  echo -e "  ${DIM}This name appears in Entra and M365 Admin Center. Use something${RST}"
+  echo -e "  ${DIM}descriptive so you can tell it apart from your live blueprint.${RST}"
+  echo -ne "  ${BOLD}Name [${default_name}]:${RST} "
+  read -r custom_name
+  local parallel_name="${custom_name:-$default_name}"
+  echo ""
+  print_success "Blueprint name: $parallel_name"
+  echo ""
+
+  # Class picker (includes OBO/S2S explainer + decision tree)
   pick_registration_class
 
   # Dynamic prereqs based on class selection
@@ -1060,28 +1144,61 @@ scenario_e() {
   print_success "Live .env and a365.generated.config.json restored to original values."
   echo ""
 
-  print_step 4 4 "Confirm both blueprints are visible"
-  print_explain "WHY: Confirm that both the live blueprint and the new parallel blueprint"
-  print_explain "are visible in the tenant. The query should show both names."
-  print_command "a365 query-entra blueprint-scopes"
-  local query_output
-  if confirm "Run this command?"; then
-    echo -e "    ${DIM}Running...${RST}"
+  print_step 4 4 "Verify registration and show what was created"
+  print_explain "WHY: Confirm the new blueprint exists in Entra and show you exactly"
+  print_explain "what was created so you can verify in the portal."
+  echo ""
+
+  # Query Graph API for the new blueprint
+  local bp_info
+  bp_info=$(az ad app list --display-name "$parallel_name" --query "[0].{appId:appId, displayName:displayName, id:id}" -o json 2>/dev/null || echo "{}")
+
+  local new_app_id
+  new_app_id=$(echo "$bp_info" | jq -r '.appId // ""' 2>/dev/null)
+
+  if [[ -n "$new_app_id" && "$new_app_id" != "null" && "$new_app_id" != "" ]]; then
+    local new_object_id
+    new_object_id=$(echo "$bp_info" | jq -r '.id // ""' 2>/dev/null)
+
+    # Check if SP exists
+    local sp_id
+    sp_id=$(az ad sp show --id "$new_app_id" --query "id" -o tsv 2>/dev/null || echo "")
+
+    echo -e "  ${BOLD}${GREEN}╔══════════════════════════════════════════════════════════════╗${RST}"
+    echo -e "  ${BOLD}${GREEN}║  ✔  REGISTRATION SUCCESSFUL                                ║${RST}"
+    echo -e "  ${BOLD}${GREEN}╚══════════════════════════════════════════════════════════════╝${RST}"
     echo ""
-    query_output=$(a365 query-entra blueprint-scopes 2>&1) || true
-    echo "$query_output"
+    echo -e "  ${BOLD}What was created in your tenant:${RST}"
     echo ""
-    if echo "$query_output" | grep -qi "$parallel_name" 2>/dev/null; then
-      print_success "Found '$parallel_name' in query results"
-    else
-      print_warning "'$parallel_name' not found in query results — check M365 Admin Center manually"
+    echo -e "    ${GREEN}✔${RST} ${BOLD}Entra App Registration${RST}"
+    echo -e "      Name:    $parallel_name"
+    echo -e "      App ID:  $new_app_id"
+    if [[ -n "$sp_id" ]]; then
+      echo -e "    ${GREEN}✔${RST} ${BOLD}Service Principal${RST}"
+      echo -e "      SP ID:   $sp_id"
     fi
+    if [[ "$SELECTED_CLASS_NAME" == *"AI Teammate"* ]]; then
+      echo -e "    ${GREEN}✔${RST} ${BOLD}Agentic User Identity${RST} (with UPN, mailbox, Teams presence)"
+    fi
+    if [[ "$SELECTED_CLASS_FLAGS" == *"--m365"* ]]; then
+      echo -e "    ${GREEN}✔${RST} ${BOLD}MCP Platform Endpoint${RST} (visible in M365 Admin Center)"
+    fi
+    if [[ -n "$SELECTED_CLASS_POST_CMD" ]]; then
+      echo -e "    ${GREEN}✔${RST} ${BOLD}Non-DW Flag${RST} (blueprint-based, not digital worker)"
+    fi
+    echo ""
+    echo -e "  ${BOLD}Portal links:${RST}"
+    echo -e "    Entra:       ${CYAN}https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/Overview/appId/$new_app_id${RST}"
+    echo -e "    Admin Center:${CYAN}https://admin.cloud.microsoft/#/agents/all?search=$(echo "$parallel_name" | sed 's/ /+/g')${RST}"
+    echo ""
+    echo -e "  ${BOLD}Live blueprint (unchanged):${RST}"
+    echo -e "    Name:    $(get_live_app_name)"
+    echo -e "    ID:      $(get_live_blueprint_id)"
   else
-    echo -e "    ${DIM}Skipped.${RST}"
+    print_warning "Could not verify blueprint in Entra — it may still be propagating."
+    print_info "Check manually in Azure Portal → App registrations → search '$parallel_name'"
   fi
 
-  echo ""
-  print_info "Both blueprints should now be visible in M365 Admin Center → Agents."
   echo ""
   print_info "To clean up the test blueprint later, run:"
   print_command "a365 cleanup blueprint -n \"$parallel_name\" -y"
