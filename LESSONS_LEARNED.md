@@ -641,3 +641,39 @@ Why we're immune (file:line citations):
 | MAC inventory shows your agent with empty "Platform" column | §23 | Server-stamped enum, not settable client-side. File a Microsoft feature request — there is no CLI flag, config field, or runtime attribute that controls this column. |
 | `user.id` shows as `8:orgid:...` instead of an AAD GUID in span output | §22 | `_build_caller_details` should use `from_property.aad_object_id` for `user_id`, not `from_property.id`. The `id` field is the channel-prefixed routing id; the renderer's active-user counter needs the bare AAD OID. |
 | New agentic instance lands in MAC but its Activity tab stays empty while another instance's tab works | §24 | If you've added a hardcoded fallback or `AGENT_INSTANCE_ID` env var for the per-turn agent ID, remove it. Python's correct path reads `recipient.agentic_app_id` per turn, no fallback. |
+
+## 25. Client app display name must be "Agent 365 CLI" for `-n` mode
+
+**Symptom.** `a365 setup blueprint -n "<name>"` or `a365 setup all -n "<name>"` fails with `App "Agent 365 CLI" was not found in tenant` and prompts interactively for a client app ID.
+
+**Root cause.** When using `-n` (name-only mode), the CLI bypasses `a365.config.json` and resolves the `clientAppId` by searching for an Entra app with display name `"Agent 365 CLI"`. If your custom client app has a different name (e.g., `"A365 Draft Dodger Client"`), the lookup fails.
+
+**Fix.** Rename your custom client app:
+
+```bash
+az ad app update --id <your-client-app-id> --display-name "Agent 365 CLI"
+```
+
+One-time change, no functional impact. After this, all `-n` scenarios find the app automatically.
+
+## 26. `a365 setup all -n` overwrites .env and a365.generated.config.json in cwd
+
+**Symptom.** After running `a365 setup all -n "Test Agent" --m365`, your live agent stops working because `.env` service connection credentials and `a365.generated.config.json` now point at the test blueprint.
+
+**Root cause.** The CLI's "Project settings" step stamps `CONNECTIONS__SERVICE_CONNECTION__*`, `AGENT365OBSERVABILITY__*`, and the generated config with the *new* blueprint's IDs and secret — overwriting whatever was there. If these files are symlinks (e.g., in a git worktree), the *live* project's config gets clobbered.
+
+**Fix.** Back up `.env` and `a365.generated.config.json` before running `setup all -n`, and restore them after. The demo script (`scripts/demo-reregister.sh`) does this automatically in scenario E.
+
+## 27. PowerShell Graph pre-auth required on macOS for blueprint creation
+
+**Symptom.** `a365 setup blueprint` or `a365 setup all` fails with `Browser authentication is not supported on this platform: macOS <version>` followed by `Admin consent has not been granted` — even though consent IS granted.
+
+**Root cause.** The CLI's "Sign in to Microsoft Graph to continue" step uses browser-based MSAL auth. On macOS, this fails and the CLI does *not* fall back to device code auth for this particular step (though it does for the requirements check).
+
+**Fix.** Pre-authenticate to Microsoft Graph via PowerShell before running the CLI:
+
+```bash
+pwsh -c "Connect-MgGraph -TenantId '<tenantId>' -ClientId '<clientAppId>' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome"
+```
+
+The CLI picks up the cached Graph session and skips its own auth. The demo script automates this as step 2 in scenario E.

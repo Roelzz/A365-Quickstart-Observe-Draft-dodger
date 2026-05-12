@@ -790,7 +790,7 @@ scenario_e() {
     check_prereqs "Scenario E (${SELECTED_CLASS_NAME})" az-login cli-version role-agent-dev tunnel agent || return
   fi
 
-  print_step 1 3 "Snapshot current state"
+  print_step 1 4 "Snapshot current state"
   print_command "jq '{liveBlueprint: .agentBlueprintId}' a365.generated.config.json"
   if [[ -f a365.generated.config.json ]]; then
     run_or_skip "jq '{liveBlueprint: .agentBlueprintId}' a365.generated.config.json"
@@ -799,72 +799,69 @@ scenario_e() {
   fi
   echo ""
 
-  # Build setup command, injecting clientAppId if available to avoid interactive prompt
-  local client_app_flag=""
-  if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
-    client_app_flag="--client-app-id $PREFLIGHT_CLIENT_APP_ID"
+  # Protect live config: CLI overwrites .env and a365.generated.config.json in cwd.
+  # Back up before running, restore after.
+  local env_backup="" gen_backup=""
+  if [[ -f .env ]]; then
+    env_backup=$(mktemp)
+    cp .env "$env_backup"
   fi
+  if [[ -f a365.generated.config.json ]]; then
+    gen_backup=$(mktemp)
+    cp a365.generated.config.json "$gen_backup"
+  fi
+
+  print_step 2 4 "Pre-authenticate to Microsoft Graph"
+  print_explain "The CLI needs a Graph session for blueprint creation."
+  print_explain "On macOS, browser auth may fail — PowerShell device code is the workaround."
+  if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
+    print_command "pwsh -c \"Connect-MgGraph -TenantId '$PREFLIGHT_AZ_TENANT' -ClientId '$PREFLIGHT_CLIENT_APP_ID' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome\""
+    run_or_skip_critical "pwsh -c \"Connect-MgGraph -TenantId '$PREFLIGHT_AZ_TENANT' -ClientId '$PREFLIGHT_CLIENT_APP_ID' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome\"" \
+      "Graph pre-auth failed — blueprint creation will likely fail" || { _restore_configs "$env_backup" "$gen_backup"; return; }
+  else
+    print_command "pwsh -c \"Connect-MgGraph -TenantId '$PREFLIGHT_AZ_TENANT' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome\""
+    run_or_skip_critical "pwsh -c \"Connect-MgGraph -TenantId '$PREFLIGHT_AZ_TENANT' -Scopes 'Application.ReadWrite.All','Directory.Read.All' -NoWelcome\"" \
+      "Graph pre-auth failed" || { _restore_configs "$env_backup" "$gen_backup"; return; }
+  fi
+  echo ""
+
   local setup_cmd="${SELECTED_CLASS_CMD} -n \"$parallel_name\" $SELECTED_CLASS_FLAGS"
 
-  print_step 2 3 "Register second blueprint (${SELECTED_CLASS_NAME})"
+  print_step 3 4 "Register second blueprint (${SELECTED_CLASS_NAME})"
   print_command "$setup_cmd"
-  if [[ -n "$client_app_flag" ]]; then
-    print_explain "Client app ID auto-resolved from a365.config.json: $PREFLIGHT_CLIENT_APP_ID"
-  fi
   print_explain "-n bypasses the project config, so the live blueprint is not touched."
   print_explain "The CLI will print a new GUID — note it."
-  if [[ -n "$PREFLIGHT_CLIENT_APP_ID" && "$PREFLIGHT_CLIENT_APP_ID" != "null" ]]; then
-    print_explain "Client app ID will be auto-provided from a365.config.json."
-    if confirm "Run this command?"; then
-      echo -e "    ${DIM}Running (auto-providing clientAppId: ${PREFLIGHT_CLIENT_APP_ID})...${RST}"
-      echo ""
-      # Pipe clientAppId for the first prompt, then reconnect terminal for device-code etc.
-      eval "$setup_cmd" < <(echo "$PREFLIGHT_CLIENT_APP_ID"; cat < /dev/tty)
-      local rc=$?
-      echo ""
-      if [[ $rc -eq 0 ]]; then
-        print_success "Command succeeded (exit $rc)"
-      else
-        print_warning "Blueprint registration failed — check tunnel, auth, and CLI version (exit $rc)"
-        echo ""
-        print_info "Fix the issue and try this scenario again."
-        CURRENT_STEP=""
-        pause_for_menu
-        return
-      fi
-    else
-      echo -e "    ${DIM}Skipped — treating as abort for this scenario.${RST}"
-      CURRENT_STEP=""
-      pause_for_menu
-      return
-    fi
-  else
-    run_or_skip_critical "$setup_cmd" \
-      "Blueprint registration failed — check tunnel, auth, and CLI version" || return
-  fi
+  print_explain "⚠ The CLI will overwrite .env and a365.generated.config.json — originals"
+  print_explain "  will be auto-restored after this step."
+  run_or_skip_critical "$setup_cmd" \
+    "Blueprint registration failed — check tunnel, auth, and CLI version" || { _restore_configs "$env_backup" "$gen_backup"; return; }
   echo ""
 
   # Non-DW requires an additional publish step
   if [[ -n "$SELECTED_CLASS_POST_CMD" ]]; then
-    print_step "2b" 3 "Mark as Non-DW blueprint"
+    print_step "3b" 4 "Mark as Non-DW blueprint"
     local post_cmd="${SELECTED_CLASS_POST_CMD} -n \"$parallel_name\""
     print_command "$post_cmd"
     print_explain "Marks this blueprint as 'not a digital worker' — internal Microsoft pattern."
     run_or_skip_critical "$post_cmd" \
-      "Non-DW publish failed" || return
+      "Non-DW publish failed" || { _restore_configs "$env_backup" "$gen_backup"; return; }
     echo ""
   fi
 
-  print_step 3 3 "Confirm both blueprints are visible"
+  # Restore live config files
+  _restore_configs "$env_backup" "$gen_backup"
+  print_success "Live .env and a365.generated.config.json restored to original values."
+  echo ""
+
+  print_step 4 4 "Confirm both blueprints are visible"
   print_command "a365 query-entra"
   local query_output
   if confirm "Run this command?"; then
     echo -e "    ${DIM}Running...${RST}"
     echo ""
     query_output=$(a365 query-entra 2>&1) || true
-    echo "$query_output" | sed 's/^/    /'
+    echo "$query_output"
     echo ""
-    # Post-validation: check if parallel name appears in output
     if echo "$query_output" | grep -qi "$parallel_name" 2>/dev/null; then
       print_success "Found '$parallel_name' in query results"
     else
@@ -882,6 +879,18 @@ scenario_e() {
 
   CURRENT_STEP=""
   pause_for_menu
+}
+
+_restore_configs() {
+  local env_backup="$1" gen_backup="$2"
+  if [[ -n "$env_backup" && -f "$env_backup" ]]; then
+    cp "$env_backup" .env
+    rm -f "$env_backup"
+  fi
+  if [[ -n "$gen_backup" && -f "$gen_backup" ]]; then
+    cp "$gen_backup" a365.generated.config.json
+    rm -f "$gen_backup"
+  fi
 }
 
 # ── Main menu ────────────────────────────────────────────────────────────────
