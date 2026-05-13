@@ -33,7 +33,7 @@
 | B (manifest re-publish) | Agent ID Developer |
 | C (permissions re-grant) | Global Administrator |
 | D (full cleanup → re-setup) | Global Administrator |
-| E (side-by-side parallel) | Depends on class — see [Registration classes](#registration-classes) |
+| E (side-by-side parallel) | Depends on class — Blueprint-only OBO needs Agent ID Developer; all others need Global Admin. See [Registration classes](#registration-classes) |
 
 You must be logged in: `az login --tenant <tenantId>`
 
@@ -128,14 +128,20 @@ After registration, the script queries the Graph API (`az ad app list`) and show
 
 ## Registration classes
 
-| # | Class | Auth mode | Use when | Creates in Entra | Min. role |
-|---|-------|-----------|----------|-----------------|-----------|
-| 1 | Blueprint-only OBO | Delegated | Agent acts on behalf of a user (default, simplest) | App + SP | Agent ID Developer |
-| 2 | Blueprint-only S2S | App perms | Agent runs autonomously (scheduled jobs, no user) | App + SP + app-permission grants | Global Admin |
-| 3 | Blueprint-only Both | Delegated + App | Both user-driven and autonomous flows (rare) | App + SP + both grant types | Global Admin |
-| 4 | AI Teammate (M365) | Delegated | Agent needs own M365 identity in Copilot | App + SP + agentic user (mailbox, Teams) | Global Admin + M365 license |
-| 5 | AI Teammate (non-M365) | Delegated | Same as 4 but Teams-channel-only | App + SP + agentic user | Global Admin + M365 license |
-| 6 | Non-DW (internal) | Delegated | Microsoft-internal pattern | App + SP (flagged non-DW) | Agent ID Developer |
+The A365 registration model is a 2×3 grid: **own identity** (AI Teammate vs Blueprint-only) × **auth mode** (OBO / S2S / Both). See [docs/a365-concepts.html](a365-concepts.html) for the interactive version with animated token flows.
+
+| Cell | Class | CLI flags | Status | Auth mode | Creates in Entra | Min. role |
+|------|-------|-----------|--------|-----------|-----------------|-----------|
+| Top-left | AI Teammate (M365) | `--m365 --aiteammate true` | Frontier | OBO (delegated) | App + SP + agentic user (mailbox, Teams, org chart) | Global Admin + M365 license |
+| Top-mid | AI Teammate + S2S | `--m365 --aiteammate true --authmode s2s` | Frontier | S2S (app perms) | App + SP + agentic user + app-permission grants | Global Admin + M365 license |
+| Top-right | AI Teammate + Both | `--m365 --aiteammate true --authmode both` | Frontier | Both | App + SP + agentic user + both grant types | Global Admin + M365 license |
+| Bottom-left | Blueprint-only OBO | `--m365` (default) | **GA** | OBO (delegated) | App + SP | Agent ID Developer |
+| Bottom-mid | Blueprint-only S2S | `--m365 --authmode s2s` | Infra GA | S2S (app perms) | App + SP + app-permission grants (tenant-wide) | Global Admin |
+| Bottom-right | Blueprint-only Both | `--m365 --authmode both` | Infra GA | Both | App + SP + both grant types | Global Admin |
+
+> **GA** = generally available, production-ready. **Infra GA** = infrastructure is GA, full experience maturing. **Frontier** = private preview — requires enrolment.
+
+The script's class picker offers these 6 cells plus a 7th option (Blueprint-based Non-DW) which is a Microsoft-internal variant outside the grid.
 
 ## Cleanup
 
