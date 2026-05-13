@@ -56,3 +56,6 @@ audit-results/
 
 # Personal demo runbook (contains tenant-specific IDs, paths)
 demo.md
+
+# Local-only docs (customer handouts, drafts, anything not for the public repo)
+Local docs/
