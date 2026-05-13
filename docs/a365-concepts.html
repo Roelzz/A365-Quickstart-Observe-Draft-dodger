@@ -912,17 +912,22 @@ flowchart TB
 <section id="two-axis">
   <div class="section-eyebrow">Section 2</div>
   <h2>Two fundamental axes</h2>
-  <p>Every A365 registration class can be placed on a 2×3 grid. The own-identity axis determines whether the agent gets its own Entra agentic user (AI Teammate) or just a service principal (Blueprint-only). The auth-mode axis determines how it acquires tokens at runtime. Hover any cell to see the corresponding class.</p>
+  <p>Every A365 registration class can be placed on a 2×3 grid. <strong>Every agent gets its own identity</strong> — that's the platform's whole pitch, and it's true for both rows of the grid. The Y axis is not "has an identity vs doesn't" — it's about whether that identity is <em>also</em> fronted by a full Entra user account (UPN, mailbox, Teams presence). The X axis is about how the agent acquires tokens at runtime. Hover any cell to see the corresponding class.</p>
 
-  <h3 style="margin-top:28px;">Axis 1: Own Identity (Y axis) — AI Teammate vs Blueprint-only</h3>
-  <p>This is the big one. It determines whether your agent gets its own full Entra identity or just a service principal.</p>
+  <div style="margin-top:16px; padding:16px; border-left: 4px solid var(--color-success); background: var(--color-success-soft); border-radius: 4px;">
+    <strong>Common misconception to clear up first:</strong> <em>"Only AI Teammate agents get their own identity; Blueprint-only agents are just a service principal."</em> That's wrong. <strong>Both</strong> classes get a first-class Microsoft Entra Agent ID (<code>@odata.type: "#microsoft.graph.agentIdentity"</code>, service-principal subtype <code>ServiceIdentity</code>) created at <code>a365 setup all</code> time, named <code>&lt;blueprint&gt; Identity</code>. The difference is whether that identity is <em>also</em> wrapped by an Entra <strong>user</strong> account.
+  </div>
 
-  <h4>AI Teammate (top row)</h4>
-  <p>An AI teammate operates in Microsoft 365 using its own agent identity. When you create an agent identity blueprint, the Agent 365 CLI provisions a <strong>Microsoft Entra Agent ID</strong> for your agent, which is a first-class identity in your tenant, subject to the same enterprise governance policies as human users.</p>
-  <p>In plain terms: the agent gets its own user account. Agentic users can be assigned licences like Microsoft 365 E5 or Teams Enterprise, have their own mailbox and OneDrive storage, appear in the org chart, and can be @mentioned in Teams and documents. Your agent can literally send emails from its own mailbox, show up in org charts, and be treated like a colleague. That's what "AI Teammate" means.</p>
+  <h3 style="margin-top:28px;">Axis 1: Agentic-user wrapper (Y axis) — AI Teammate vs Blueprint-only</h3>
+  <p>The actual question this axis answers: <em>does the agent's identity also have a user account on top, with a UPN, a mailbox, OneDrive, calendar, and Teams presence?</em></p>
 
-  <h4>Blueprint-only (bottom row)</h4>
-  <p>No dedicated user account. Agents (not AI teammates) don't need a config file. Use <code>a365 setup all --agent-name &lt;name&gt;</code> and the CLI resolves your tenant and client app automatically. You get a service principal in Entra, but no M365 user identity. Simpler, less overhead, less licensing cost, and it's the default <code>--m365</code> mode.</p>
+  <h4>AI Teammate (top row): agent identity + agentic user</h4>
+  <p>The agent identity (the <code>agentIdentity</code> SP) is provisioned at registration, the same as for any A365 agent. <em>In addition</em>, an Entra user account is created in your tenant — 1:1 with the agent identity, no password (federated credential ties it to the agent identity SP), but otherwise a full user. The agentic user can be assigned licences like Microsoft 365 E5 or Teams Enterprise, has its own mailbox and OneDrive storage, appears in the org chart, and can be @mentioned in Teams and documents. Your agent can literally send emails from its own mailbox, show up in org charts, and be treated like a colleague. <em>That's</em> what "AI Teammate" means — not "gets an identity", but "gets a user wrapper on top of the identity".</p>
+  <p>Provisioning sequence: <code>a365 setup all --m365</code> creates the blueprint + agent identity SP. Then <code>a365 publish --aiteammate true</code> flags the manifest as AI Teammate. The actual agentic user account (UPN, mailbox, presence) is minted <em>later</em> — after manifest upload to M365 Admin Centre, activation for users, and M365 Copilot licence assignment to the agent identity. Registration alone gives you the identity SP; the user-wrapper materialises through admin-centre activation.</p>
+
+  <h4>Blueprint-only (bottom row): agent identity, no user wrapper</h4>
+  <p>The agent still has its own first-class identity — the <code>agentIdentity</code> SP, named <code>&lt;blueprint&gt; Identity</code>, governed exactly like any first-class Entra principal. What it lacks is the agentic user account on top: no UPN, no mailbox, no @mention in Teams, no presence in the org chart. The agent is reached through its blueprint app's messaging endpoint and authenticates via OBO (a calling user's delegated token) or S2S (its own client credentials). Simpler, less overhead, no per-agent M365 licence required, and it's the default <code>--m365</code> mode without <code>--aiteammate</code>.</p>
+  <p>If your agent doesn't need to be addressable as a user-like entity (sending mail, appearing in org charts, being @mentioned), Blueprint-only is the right pick — and the agent still has a governance-grade identity that's auditable, license-bindable, and federated.</p>
 
   <h3 style="margin-top:28px;">Axis 2: Auth Mode (X axis) — How the agent gets tokens at runtime</h3>
 
@@ -973,6 +978,7 @@ flowchart TB
     </div>
   </div>
   <p style="margin-top:24px; color:var(--color-text-muted); font-size:13px;">There's a seventh class — <a href="#" data-jump-class="non-dw">Blueprint-based Non-DW agent</a> — that sits outside this grid. It's an internal Microsoft variant; only pick it if A365 product team directed you.</p>
+  <p style="margin-top:12px; color:var(--color-text-muted); font-size:13px;"><strong>Flag positions, in case you're wondering:</strong> the markers in the grid are conceptual. In the CLI, AI Teammate rows split into two commands: <code>a365 setup all -n &lt;name&gt; --m365 [--authmode &lt;mode&gt;]</code> (creates blueprint + agent identity SP), then <code>a365 publish --aiteammate true -n &lt;name&gt;</code> (flavours the manifest as AI Teammate). Passing <code>--aiteammate</code> to <code>setup all</code> instead would suppress the agent identity SP — wrong shape for any of these classes. See <a href="demo-reregister.md"><code>docs/demo-reregister.md</code></a> for the literal commands used per class.</p>
 
   <details class="visual-block" style="margin-top:24px;">
     <summary>The 6 cells in plain text — CLI flags and GA status</summary>
@@ -1042,18 +1048,29 @@ flowchart TB
     </div>
   </details>
 
-  <details class="visual-block">
-    <summary>Same model in plain English: the school analogy</summary>
+  <details class="visual-block" open>
+    <summary>The four layers, plainly</summary>
     <div class="visual-block-body" style="font-size:14px; line-height:1.7;">
-      <p><strong>Think of it like a school robotics programme.</strong></p>
-      <ul>
-        <li>The <strong>Blueprint</strong> is the textbook — a template anyone can use to learn how to build a particular kind of robot.</li>
-        <li>When the school buys the textbook (<em>blueprint added to tenant</em>), it ends up in <em>your school</em> as the <strong>Blueprint Principal</strong> — your school's copy, holding your school's credentials, and able to build robots for your students.</li>
-        <li>Each robot the Blueprint Principal builds is an <strong>Agent Identity</strong>. Same template, individual robot. Has a name badge, no PIN code (it authenticates via secure tokens rather than a password it could leak on the playground).</li>
-        <li>Some robots get an extra <strong>Agent User</strong> facet — a school mailbox, a OneDrive locker, and a row in the class register. Robots that need to email teachers as themselves.</li>
-        <li>Every robot has a <strong>Human Sponsor</strong> — a teacher accountable for what the robot does. If the teacher leaves the school, Lifecycle Workflows reassign the robot (or retire it) automatically.</li>
-      </ul>
-      <p style="color:var(--color-text-muted); font-size:13px;">The technical pattern matches multi-tenant App Registration → Service Principal — if your team already understands that pattern, they understand 80% of A365 identity. Lead with the analogy when explaining to architects new to A365.</p>
+      <p>There are four layers, stacked on top of each other. The interactive diagram above is the visual; this is the narrative.</p>
+
+      <h4 style="margin-top:16px;">1. Blueprint — the template</h4>
+      <p>Think of it like a class in object-oriented programming. It's an Entra App Registration that says: "here's what this type of agent is, what permissions it needs, what it can do." One blueprint per agent <em>type</em>. Multi-tenant, so it can be deployed into many organisations.</p>
+
+      <h4 style="margin-top:16px;">2. Blueprint Principal (Service Principal) — your tenant's copy of the template</h4>
+      <p>When a blueprint enters <em>your</em> tenant, Entra creates a Service Principal. This is just "the blueprint, but instantiated in your org." It holds credentials and is the thing that actually creates Agent Identities. Think of it as the factory.</p>
+
+      <h4 style="margin-top:16px;">3. Agent Identity — the deployed instance's own identity</h4>
+      <p>This is a Service Principal too, but of a special subtype (<code>microsoft.graph.agentIdentity</code> / <code>servicePrincipalType: ServiceIdentity</code>). It's single-tenant, has no stored credentials, and represents one <em>running instance</em> of the agent. This is what shows up in your audit logs. <strong>Every deployed agent gets one of these</strong> — it's their ID card.</p>
+
+      <h4 style="margin-top:16px;">4. Agent User (optional) — the human-like wrapper</h4>
+      <p>This is an Entra <em>user account</em> sitting on top of the Agent Identity. No password, federated back to the Agent Identity SP. But it gets a UPN, a mailbox, Teams presence, org-chart entry. This is what makes something an <strong>AI Teammate</strong> rather than just a Blueprint-only agent.</p>
+
+      <pre class="ascii-tree" style="margin-top:20px; padding:16px; background: var(--color-bg-secondary); border-radius: 6px; font-size:13px; line-height:1.5; overflow-x:auto;">Blueprint (template, multi-tenant)
+    └── Blueprint Principal (your tenant's copy)
+            └── Agent Identity SP (one per deployed instance)
+                    └── Agent User (optional, AI Teammate only)</pre>
+
+      <p style="color:var(--color-text-muted); font-size:13px; margin-top:16px;">The technical pattern matches multi-tenant App Registration → Service Principal — if your team already understands that, they understand 80% of A365 identity. The two new pieces are the <em>subtype</em> on layer 3 (it's not a generic SP — it's an <code>agentIdentity</code> with its own governance hooks) and the <em>optional</em> layer 4 (the user wrapper that turns a service principal into something Teams and Copilot can present as a colleague).</p>
     </div>
   </details>
 </section>
@@ -1174,7 +1191,29 @@ flowchart LR
   <div class="section-eyebrow">Section 3 · Interactive</div>
   <h2>Pick the right class for your agent</h2>
   <p>Five-question walkthrough that lands you on a recommended class. Answers feed a small state machine; click the recommendation to see the class card in detail.</p>
-  <div class="decision-tree-card" id="decision-tree-host">
+
+  <div style="margin-top:16px; padding:16px; border-left: 4px solid var(--color-info, #0078d4); background: var(--color-info-soft, #deecf9); border-radius: 4px;">
+    <strong>Before you answer:</strong> the tree asks whether your agent runs <em>autonomously</em> or <em>with a calling user</em>. That phrasing trips people up, especially for workloads in Databricks, Airflow, AKS, Logic Apps, etc. So to be precise:
+    <ul style="margin-top:8px; margin-bottom:0; font-size:13px;">
+      <li><strong>"User session" in A365 terms</strong> = there's a <em>live human Entra user</em> whose delegated token (a JWT issued to that user) the agent can borrow at the moment of the API call. It's not about whether code is running inside <em>some</em> session somewhere — a notebook session, a pod, a job runner all count as nothing here.</li>
+      <li><strong>"Autonomous"</strong> = no such user token is available. The agent has to authenticate as itself (its own client credentials on the Blueprint Principal).</li>
+    </ul>
+    <table style="margin-top:12px; font-size:13px; width:100%; border-collapse: collapse;">
+      <thead>
+        <tr><th style="text-align:left; padding:6px; border-bottom: 1px solid var(--color-border);">Pattern</th><th style="text-align:left; padding:6px; border-bottom: 1px solid var(--color-border);">User session in A365 terms?</th><th style="text-align:left; padding:6px; border-bottom: 1px solid var(--color-border);">Answer</th></tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:6px;">User @-mentions agent in Teams / Copilot</td><td style="padding:6px;"><strong>Yes</strong> — user's delegated token flows in</td><td style="padding:6px;">OBO</td></tr>
+        <tr><td style="padding:6px;">Databricks scheduled job at 03:00</td><td style="padding:6px;"><strong>No</strong> — no human present even though <em>you</em> set the schedule</td><td style="padding:6px;">S2S (autonomous)</td></tr>
+        <tr><td style="padding:6px;">Event-triggered pipeline (queue, blob arrival)</td><td style="padding:6px;"><strong>No</strong> — no Entra user token in the chain</td><td style="padding:6px;">S2S (autonomous)</td></tr>
+        <tr><td style="padding:6px;">Customer system calls the agent via API</td><td style="padding:6px;"><strong>No</strong> — from A365's perspective there's no Entra user</td><td style="padding:6px;">S2S (autonomous)</td></tr>
+        <tr><td style="padding:6px;">Notebook running interactively, agent calls Graph as <em>you</em></td><td style="padding:6px;">Yes <em>if</em> the platform passes your Entra token through (rare and non-trivial)</td><td style="padding:6px;">OBO if so; otherwise S2S</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:8px; margin-bottom:0; font-size:13px;">Picking S2S doesn't mean you give up observability — both classes feed Agent 365's audit and Activity-tab logs. The only thing the class changes is who appears as the <em>actor</em>: the user (OBO) or the agent (S2S).</p>
+  </div>
+
+  <div class="decision-tree-card" id="decision-tree-host" style="margin-top:24px;">
     <!-- rendered by JS -->
   </div>
 </section>
@@ -1187,6 +1226,135 @@ flowchart LR
   <div class="class-grid" id="class-grid">
     <!-- rendered by JS -->
   </div>
+</section>
+
+<!-- §4½ MINIMUM ROLES PER MICROSOFT LEARN -->
+<section id="roles-matrix">
+  <div class="section-eyebrow">Section 4½ · Least-privilege answer</div>
+  <h2>Minimum roles per Microsoft Learn</h2>
+  <p>The defensible answer for a security review that asks <em>"why does this need Global Administrator?"</em>. Global Admin is a superset — it's sufficient for every operation here, but it is rarely the documented <strong>least-privileged</strong> role that works. Every claim below has a Microsoft Learn citation.</p>
+
+  <table class="ref-table" style="margin-top: 16px;">
+    <thead>
+      <tr>
+        <th style="width: 4%;">#</th>
+        <th style="width: 38%;">Operation</th>
+        <th style="width: 26%;">Minimum role</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Create the custom client app registration (e.g. "Agent 365 CLI")</td>
+        <td>Any user (default tenant policy) · <strong>Application Administrator</strong> if your tenant restricts self-service app registration</td>
+        <td><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration" target="_blank">Custom client app registration</a></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Grant admin consent for delegated Graph scopes on the CLI app (User.Read, Application.ReadWrite.All, AgentIdentityBlueprint.*, DelegatedPermissionGrant.ReadWrite.All, Directory.Read.All)</td>
+        <td><strong>Application Administrator</strong> (recommended) · also AI Administrator, Cloud Application Administrator, Global Administrator</td>
+        <td><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration#to-add-permissions-and-grant-consent" target="_blank">Custom client app registration § To add permissions and grant consent</a> — page lists App Admin as <em>"Recommended"</em>, GA as <em>"Has all permissions, but not required"</em></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Tenant-wide admin consent for any delegated Graph permission (general rule)</td>
+        <td><strong>Cloud Application Administrator</strong>, <strong>Application Administrator</strong>, <strong>AI Administrator</strong>, or Global Administrator</td>
+        <td><a href="https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites" target="_blank">Grant tenant-wide admin consent § Prerequisites</a></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code>a365 setup all -n &lt;name&gt; --m365</code> — creates blueprint + agent identity SP (<code>microsoft.graph.agentIdentity</code> / <code>ServiceIdentity</code>)</td>
+        <td><strong>Agent ID Developer</strong></td>
+        <td><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/registration#prerequisites" target="_blank">Setup agent blueprint § Prerequisites</a></td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>OAuth2 delegated permission grants on the blueprint app's resources (Microsoft Graph, Agent 365 Tools, Messaging Bot API, Observability API, Power Platform API)</td>
+        <td>A365 docs say <strong>Global Administrator</strong>; generic Entra rule says Application Administrator suffices for delegated grants — <em>ambiguous, see caveats below</em></td>
+        <td>A365: <a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/registration#setup-by-using-agent-id-developer" target="_blank">Setup by using Agent ID Developer</a>. Generic: <a href="https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites" target="_blank">Grant admin consent prereqs</a></td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td><code>a365 setup all --m365</code> (register messaging endpoint via MCP Platform)</td>
+        <td>Same as row 4</td>
+        <td>(same as row 4)</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td><code>a365 setup all --authmode s2s</code> / <code>--authmode both</code> — Graph application-permission grants</td>
+        <td><strong>Privileged Role Administrator</strong> (not GA) — the one role that covers Graph app-role consent that Application Admin cannot grant</td>
+        <td><a href="https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites" target="_blank">Grant admin consent § Prerequisites</a> — <em>"Privileged Role Administrator, for granting consent for apps requesting any permission, for any API"</em></td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td><code>a365 publish</code> (manifest packaging, local CLI only)</td>
+        <td>None (no Graph call)</td>
+        <td><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/publish" target="_blank">Publish Agent</a></td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td>Upload custom agent manifest at admin.microsoft.com → Agents → Upload custom agent</td>
+        <td><strong>AI Administrator</strong> (or GA)</td>
+        <td><a href="https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-roles-perms?view=o365-worldwide" target="_blank">Agent management roles in M365 admin centre</a></td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td>Activate uploaded agent for users / deployment audience selection</td>
+        <td><strong>AI Administrator</strong> (or GA)</td>
+        <td><a href="https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-registry?view=o365-worldwide" target="_blank">Agent registry in M365 admin centre</a></td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td>Assign Microsoft 365 Copilot licence to a regular user account</td>
+        <td><strong>License Administrator</strong> (<code>microsoft.directory/users/assignLicense</code>)</td>
+        <td><a href="https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/permissions-reference" target="_blank">Entra built-in roles permissions reference</a></td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td>Assign M365 Copilot licence to an <strong>agent identity</strong> (<code>agentUsers</code> object type) — for AI Teammate full experience</td>
+        <td><strong>Agent ID Administrator</strong> (<code>microsoft.directory/agentUsers/assignLicense</code>) — note: <em>different role</em> from Agent ID Developer</td>
+        <td><a href="https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/permissions-reference#agent-id-administrator" target="_blank">Entra built-in roles § Agent ID Administrator</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 28px;">Practical role bundles</h3>
+  <table class="ref-table">
+    <thead>
+      <tr>
+        <th style="width: 40%;">Scenario</th>
+        <th>Role bundle held by one person (or hand-off chain)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Blueprint-only OBO (M365) demo via DevTunnel</td>
+        <td><strong>Agent ID Developer</strong> + <strong>Application Administrator</strong>. The OBO-class user-consent at first use means no admin consent is needed for the runtime delegated scopes; admin consent is only used on the CLI's client-app permissions. Smallest viable bundle.</td>
+      </tr>
+      <tr>
+        <td>+ Add S2S or Both auth mode</td>
+        <td>Above + <strong>Privileged Role Administrator</strong> for the duration of the consent step. Can be dropped after registration; not needed at runtime.</td>
+      </tr>
+      <tr>
+        <td>+ Add full AI Teammate experience (manifest upload, activation, Copilot licence)</td>
+        <td>Above + <strong>AI Administrator</strong> (admin-centre upload + activation) + <strong>Agent ID Administrator</strong> (Copilot licence on the <code>agentUsers</code> object). Can be a different person doing the hand-off — developer hands off <code>manifest.zip</code> from the dev sandbox.</td>
+      </tr>
+      <tr>
+        <td>+ Add Azure Container Apps deployment (production)</td>
+        <td>Above + <strong>Contributor</strong> on the target Azure subscription. Tenant roles unchanged.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 28px;">Caveats to flag in a security review</h3>
+  <ul>
+    <li><strong>Row 5 contradiction:</strong> Microsoft's A365-specific docs say Global Administrator is required for "OAuth2 delegated permission grants" during blueprint registration; Microsoft's generic Entra consent doc says Application Administrator suffices for <em>all</em> delegated grants. The two contradict directly. The generic Entra rule is the authoritative one. If the A365 CLI hard-checks the operator's <code>wids</code> token claim for the GA template GUID, Application Admin may hit a false-negative even though the underlying Graph call would accept it. <em>Untested empirically; flag as such.</em></li>
+    <li><strong>Row 7 (S2S):</strong> the one place a non-Application-Admin role is genuinely required. <strong>Privileged Role Administrator</strong>, not Global Administrator. Application Admin and Cloud App Admin cannot grant Microsoft Graph application-permission consent — that's the Graph app-role carve-out in the prerequisites table.</li>
+    <li><strong>Row 9 / 10 (manifest upload + activation):</strong> the A365 publish doc says GA; the M365 admin-centre's own role doc says AI Administrator with explicit "Install, modify, approve, and manage agent configurations" rights. AI Administrator is the documented minimum.</li>
+    <li><strong>Agent ID Developer ≠ Agent ID Administrator:</strong> different roles. Developer can create/manage blueprints they own. Administrator additionally has <code>agentUsers/assignLicense</code> for AI Teammate licensing. The CLI's setup/cleanup commands need Developer; only the AI Teammate Copilot-licence step needs Administrator.</li>
+    <li><strong>Scope list drift:</strong> Microsoft Learn's current list of delegated scopes for the Agent 365 CLI custom-client app is <code>AgentIdentityBlueprint.ReadWrite.All</code>, <code>AgentIdentityBlueprintPrincipal.Create</code>, <code>AgentIdentity.Read.All</code>, <code>AgentIdentity.DeleteRestore.All</code>, <code>AgentRegistration.ReadWrite.All</code>, <code>Application.Read.All</code>, <code>User.Read</code>. Our <code>create_app_registration.ps1</code> requests a slightly different set including <code>AgentIdentityBlueprint.UpdateAuthProperties.All</code> and <code>DelegatedPermissionGrant.ReadWrite.All</code>. Worth reconciling against the latest CLI's actual scope demands.</li>
+  </ul>
 </section>
 
 <!-- §5 CONCEPT BROWSER -->
@@ -1206,7 +1374,41 @@ flowchart LR
 <section id="comparator">
   <div class="section-eyebrow">Section 6 · Comparator</div>
   <h2>OBO vs S2S — side-by-side</h2>
-  <p>Same agent, different auth mode. Toggle below; rows recompute. "Show both" splits into two columns for direct A/B reading.</p>
+  <p>This is about <em>how the Agent Identity gets tokens at runtime</em>. Two completely different flows.</p>
+
+  <div style="margin-top:20px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+    <div style="padding:16px; border-left: 4px solid var(--color-success); background: var(--color-success-soft); border-radius: 4px;">
+      <h4 style="margin-top:0;">OBO (On-Behalf-Of)</h4>
+      <p style="font-size:13px; margin-bottom:0;">A user calls the agent. The agent receives the user's token, swaps it via Entra for a new token scoped to whatever resource it needs (Graph, SharePoint, etc.), and acts <strong>as that user</strong>. The agent can only do what that user is allowed to do. Audit trail says <em>"User X did Y via the agent."</em> No admin consent needed for most OBO scopes.</p>
+    </div>
+    <div style="padding:16px; border-left: 4px solid var(--color-warning); background: var(--color-warning-soft); border-radius: 4px;">
+      <h4 style="margin-top:0;">S2S (Service-to-Service)</h4>
+      <p style="font-size:13px; margin-bottom:0;">No user involved. The agent authenticates <strong>as itself</strong>, using its own client credentials (client ID + secret on the Blueprint Principal). It has its own app permissions granted by an admin. The agent acts entirely on its own authority. Requires admin consent (Privileged Role Administrator for Graph app-role consent — see <a href="#roles-matrix">role matrix</a>). Audit trail says <em>"Agent did Y."</em></p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px;">The simple mental model</h3>
+  <table class="ref-table">
+    <thead>
+      <tr>
+        <th style="width: 30%;">Question</th>
+        <th>OBO</th>
+        <th>S2S</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Who's driving?</td><td>A user triggered this</td><td>Nobody, or a scheduler</td></tr>
+      <tr><td>Whose permissions?</td><td>The user's</td><td>The agent's own</td></tr>
+      <tr><td>Admin consent needed?</td><td>Usually no (user self-consents on first use)</td><td>Yes, mandatory</td></tr>
+      <tr><td>Audit says…</td><td>"User via agent"</td><td>"Agent itself"</td></tr>
+      <tr><td>Right pick when…</td><td>A human is always in the loop and the agent acts on their behalf</td><td>Scheduled jobs, background processing, sending from the agent's own mailbox</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:20px;">"Both" exists as a third option but Microsoft explicitly warns: pick deliberately, highest blast radius. If you can split the use case into two agents (one OBO, one S2S), do that instead.</p>
+
+  <h3 style="margin-top:28px;">Interactive comparator</h3>
+  <p>Toggle below; rows recompute. "Show both" splits into two columns for direct A/B reading. The full per-attribute breakdown — admin role, consent type, audit attribution, runtime trigger, surface, licensing — is rendered here.</p>
   <div class="comparator-toggle" id="comparator-toggle">
     <button data-mode="obo" class="active">OBO</button>
     <button data-mode="s2s">S2S</button>
@@ -1481,7 +1683,7 @@ const concepts = [
     related: ["entra-application", "blueprint-principal", "agent-identity", "agentic-user-identity", "app-permission", "oauth2-permission-grant"] },
   { id: "agentic-user-identity", family: "identity", name: "Agentic user identity",
     oneLine: "An Entra user account (1:1 with Agent Identity) — UPN, mailbox, OneDrive, Teams presence. Crucially, <strong>no password</strong> — authenticates via federated credentials.",
-    definition: "When you set <code>--aiteammate true</code>, A365 provisions an Entra <strong>user</strong> object (in addition to the SP) for the agent. It gets a UPN, a mailbox, a OneDrive, calendar, Teams presence. The agent appears in M365 Copilot Agents tab as a 'hireable' team member. <strong>No password is stored on the user object</strong> — the user authenticates via a <a href='#c-federated-credential'>federated credential</a> tied to the Agent Identity SP. This is what makes 'login as the agent' impossible and 'spoof the agent' difficult: there's no shared secret a human can phish. Requires M365 licensing for the user account.",
+    definition: "When you mark an agent as <strong>AI Teammate</strong> (via <code>--aiteammate true</code> on <code>a365 publish</code>), the registration flags the blueprint for full agentic-user provisioning. The Entra <strong>user</strong> object (UPN, mailbox, OneDrive, calendar, Teams presence) is minted <em>later</em> — after manifest upload to M365 Admin Centre, activation for users, and M365 license assignment — <em>not</em> at registration time. At registration the CLI creates only the <a href='#c-agent-identity'>Agent Identity SP</a> (named <code>&lt;blueprint&gt; Identity</code>, OData type <code>microsoft.graph.agentIdentity</code>, <code>servicePrincipalType: ServiceIdentity</code>). Once provisioned, the agentic user appears in the M365 Copilot Agents tab as a 'hireable' team member. <strong>No password is stored on the user object</strong> — the user authenticates via a <a href='#c-federated-credential'>federated credential</a> tied to the Agent Identity SP. This is what makes 'login as the agent' impossible and 'spoof the agent' difficult: there's no shared secret a human can phish. Requires M365 licensing for the user account.",
     references: ["agent365-registration-classes.md §1", "Agent 365 conc.pptx slide 1"],
     related: ["agentic-user-template", "ai-teammate", "agent-identity", "federated-credential", "agentic-app-id"] },
   { id: "agentic-user-template", family: "identity", name: "Agentic user template",
@@ -1532,8 +1734,8 @@ const concepts = [
     references: ["agent365-registration-classes.md §4"],
     related: ["obo", "s2s", "blueprint-only-both"] },
   { id: "admin-consent", family: "auth", name: "Admin consent",
-    oneLine: "Tenant-wide consent grant from a Global Administrator; required for S2S and most non-OBO scopes.",
-    definition: "Some Entra app permissions can be consented by an individual user (delegated, OBO). Others require a Global Administrator to consent on behalf of the entire tenant. App permissions (S2S) always need this. The CLI prints an admin-consent URL when it detects the operator isn't Global Admin.",
+    oneLine: "Tenant-wide consent grant; documented minimum is <strong>Application Administrator</strong> for delegated scopes, <strong>Privileged Role Administrator</strong> for Graph application permissions. Global Administrator is sufficient but not required.",
+    definition: "Some Entra app permissions can be consented by an individual user (delegated, OBO — user-consent). Others need an admin to consent on behalf of the tenant. Per <a href='https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites' target='_blank'>Microsoft Learn's grant-admin-consent prerequisites</a>: tenant-wide consent for <strong>delegated</strong> Graph permissions can be granted by Application Administrator, Cloud Application Administrator, AI Administrator, or Global Administrator. Consent for Microsoft Graph <strong>application</strong> permissions (S2S app roles) needs <strong>Privileged Role Administrator</strong> — Application Admin and Cloud App Admin do <em>not</em> have this. The CLI prints an admin-consent URL when the operator's role isn't sufficient; the URL itself doesn't require GA either, just an admin with the right scope.",
     references: ["agent365-registration-classes.md §4"],
     related: ["s2s", "obo", "delegated-grant", "global-administrator-role"] },
   { id: "delegated-grant", family: "auth", name: "Delegated grant",
@@ -1605,7 +1807,7 @@ const concepts = [
     related: ["m365-admin-centre-agents"] },
   { id: "ai-teammate", family: "surface", name: "AI Teammate (class family)",
     oneLine: "Class family where the agent has its own Entra agentic user; opposed to Blueprint-only.",
-    definition: "One of two top-level identity-axis families. AI Teammate = own Entra agentic user (mailbox, Teams presence, calendar). Blueprint-only = SP only, no Entra user. Selected via <code>--aiteammate true</code> at blueprint creation. Still <strong>Frontier preview</strong> as of May 2026.",
+    definition: "One of two top-level Y-axis families. <strong>Both</strong> families get a first-class agent identity (the <code>agentIdentity</code> SP) at registration time. AI Teammate <em>adds</em> an Entra user account on top of that identity — UPN, mailbox, Teams presence, calendar. Blueprint-only is the agent identity SP alone, no user wrapper. Selected via <code>--aiteammate true</code> on <code>a365 publish</code> (manifest flavour); the identity SP itself is created regardless of class by <code>a365 setup all</code>. Still <strong>Frontier preview</strong> as of May 2026.",
     references: ["agent365-registration-classes.md §1", "agent365-registration-classes.md §2"],
     related: ["blueprint-only", "agentic-user-identity"] },
   { id: "blueprint-only", family: "surface", name: "Blueprint-only (class family)",
@@ -1826,9 +2028,9 @@ const concepts = [
     definition: "<code>--m365</code> on <code>a365 setup blueprint</code>, <code>setup all</code>, and <code>setup blueprint --update-endpoint</code>. Without it, the CLI silently no-ops on endpoint updates (Skipping messaging endpoint update — this command only applies to M365 agents). Mandatory for any M365-integrated agent.",
     references: ["LESSONS_LEARNED.md §5.1"],
     related: ["mcp-platform-endpoint", "callback-uri"] },
-  { id: "aiteammate-flag", family: "auth", name: "--aiteammate flag",
+  { id: "aiteammate-flag", family: "auth", name: "--aiteammate flag (publish-only in practice)",
     oneLine: "CLI flag selecting whether the agent has its own agentic-user identity.",
-    definition: "<code>--aiteammate true</code> → AI Teammate (own Entra user). <code>--aiteammate false</code> (or omitted) → Blueprint-only (SP only). Lives on <code>a365 setup all</code> and <code>a365 publish</code>, not on <code>a365 setup blueprint</code> alone. Overrides the <code>aiTeammate</code> field in <code>a365.config.json</code>.",
+    definition: "Pass to <code>a365 publish</code> to flavour the manifest: <code>--aiteammate true</code> → AI Teammate, <code>--aiteammate false</code> (default) → Blueprint-only. <strong>Caveat:</strong> passing this flag to <code>a365 setup all</code> instead has a different effect — it tells setup to do <em>blueprint + permissions only</em> and skip auto-creation of the <a href='#c-agent-identity'>Agent Identity SP</a>. The correct flow is to omit <code>--aiteammate</code> from <code>setup all</code> (so the identity SP gets created) and pass <code>--aiteammate true</code> only to <code>a365 publish</code>. Overrides the <code>aiTeammate</code> field in <code>a365.config.json</code>.",
     references: ["agent365-registration-classes.md §4"],
     related: ["ai-teammate", "blueprint-only", "use-blueprint-flag"] },
   { id: "use-blueprint-flag", family: "auth", name: "--use-blueprint flag",
@@ -1843,17 +2045,17 @@ const concepts = [
     related: ["use-blueprint-flag", "blueprint-only"] },
   { id: "ai-teammate-m365", family: "surface", name: "AI Teammate (M365)",
     oneLine: "AI Teammate class with messaging endpoint registered via MCP Platform; surfaces in M365 Copilot Agents tab.",
-    definition: "<code>--m365 --aiteammate true</code>. Own Entra agentic-user identity, mailbox, Teams presence. Registered via MCP Platform → reachable from M365 Copilot. Admin consent required. Currently <strong>Frontier preview</strong>; trial licenses extended to December 2026. This is Draft Dodger's current class.",
+    definition: "Two-step CLI flow: <code>a365 setup all -n &lt;name&gt; --m365</code> (creates blueprint + agent identity SP) then <code>a365 publish --aiteammate true -n &lt;name&gt;</code> (flavours manifest as AI Teammate). Own Entra agentic-user identity (UPN, mailbox, Teams presence) is provisioned later via manifest upload + admin centre activation + M365 license. Registered via MCP Platform → reachable from M365 Copilot. Admin consent required. Currently <strong>Frontier preview</strong>; trial licenses extended to December 2026.",
     references: ["agent365-registration-classes.md §1"],
     related: ["ai-teammate", "mcp-platform-endpoint", "agentic-user-identity"] },
   { id: "ai-teammate-non-m365", family: "surface", name: "AI Teammate (non-M365)",
     oneLine: "AI Teammate class with messaging endpoint registered via Teams Developer Portal; Teams-only.",
-    definition: "<code>--aiteammate true</code> without <code>--m365</code>. Same identity model as the M365 variant but the bot endpoint is configured through Teams Developer Portal. Agent surfaces only in Teams channels, not in M365 Copilot. Still Frontier preview.",
+    definition: "Two-step CLI flow without <code>--m365</code>: <code>a365 setup all -n &lt;name&gt;</code> then <code>a365 publish --aiteammate true -n &lt;name&gt;</code>. Same identity model as the M365 variant but the bot endpoint is configured through Teams Developer Portal. Agent surfaces only in Teams channels, not in M365 Copilot. Still Frontier preview.",
     references: ["agent365-registration-classes.md §2"],
     related: ["ai-teammate", "teams-developer-portal"] },
   { id: "blueprint-only-obo", family: "surface", name: "Blueprint-only with OBO (M365) — DEFAULT",
     oneLine: "CLI default for non-AI-Teammate agents. GA as of 1 May 2026. SP-only, OBO delegated permissions.",
-    definition: "<code>--m365</code> with no <code>--aiteammate</code> and no <code>--authmode</code>. Service principal only, no Entra user. Delegated permissions only; no admin consent needed for OBO scopes. GA. The right pick for most server-side agents that act on behalf of a calling user.",
+    definition: "<code>--m365</code> with no <code>--aiteammate</code> and no <code>--authmode</code>. The agent still gets its own first-class identity (the <code>agentIdentity</code> SP named <code>&lt;blueprint&gt; Identity</code>) — what's missing is the agentic user wrapper (UPN, mailbox, Teams presence). Delegated permissions only; no admin consent needed for OBO scopes. GA. The right pick for most server-side agents that act on behalf of a calling user.",
     references: ["agent365-registration-classes.md §3"],
     related: ["blueprint-only", "obo", "delegated-grant"] },
   { id: "blueprint-only-s2s", family: "surface", name: "Blueprint-only with S2S (M365)",
@@ -1866,16 +2068,36 @@ const concepts = [
     definition: "<code>--m365 --authmode both</code>. Handles both user-triggered (OBO) and autonomous (S2S) flows. Admin consent required. Microsoft's docs say 'pick deliberately' — usually a sign that two separate agents would be cleaner. Use only when one agent legitimately needs both modes.",
     references: ["agent365-registration-classes.md §5"],
     related: ["blueprint-only", "obo", "s2s"] },
-  { id: "global-administrator-role", family: "auth", name: "Global Administrator role",
-    oneLine: "Entra role required for admin consent. Mandatory for S2S registration and several OBO permission grants.",
-    definition: "Holder can consent to permissions tenant-wide. Required by <code>a365 setup permissions {mcp,bot,...}</code> and (effectively) by <code>a365 setup all</code>. If the CLI operator isn't a Global Admin, the CLI prints an admin-consent URL for a Global Admin to visit.",
-    references: ["agent365-registration-classes.md §4"],
-    related: ["admin-consent", "agent-id-developer-role"] },
+  { id: "global-administrator-role", family: "auth", name: "Global Administrator role (often overstated as required)",
+    oneLine: "Superset role — sufficient for every operation in A365 registration but rarely the documented <em>least-privileged</em> answer.",
+    definition: "Holder has every Entra permission. Older A365 docs and our project's older runbooks said GA was required at most steps; per Microsoft Learn the actual least-privileged roles are: <strong>Application Administrator</strong> for delegated-permission admin consent (covers most steps), <strong>Privileged Role Administrator</strong> for Graph application-permission consent (S2S/Both classes only), <strong>Agent ID Developer</strong> for blueprint creation, <strong>AI Administrator</strong> for M365 admin-centre upload + activation, <strong>Agent ID Administrator</strong> for licensing agent identities. See the <a href='#roles-matrix'>Minimum roles per Microsoft Learn</a> table further down.",
+    references: ["agent365-registration-classes.md §4", "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites"],
+    related: ["admin-consent", "agent-id-developer-role", "application-administrator-role", "privileged-role-administrator-role", "ai-administrator-role", "agent-id-administrator-role"] },
   { id: "agent-id-developer-role", family: "auth", name: "Agent ID Developer role",
-    oneLine: "Entra role required to create blueprints. Less privileged than Global Admin.",
-    definition: "Tenant-scoped role permitting blueprint creation via <code>a365 setup blueprint</code>. Doesn't grant the ability to consent permissions — that still needs Global Admin for the <code>setup permissions</code> step (or a separate Global Admin clicks the consent URL).",
-    references: ["agent365-registration-classes.md §3"],
-    related: ["global-administrator-role", "blueprint"] },
+    oneLine: "Entra role required to create blueprints. The base A365-specific role.",
+    definition: "Per <a href='https://learn.microsoft.com/en-us/microsoft-agent-365/developer/registration#prerequisites' target='_blank'>Microsoft Learn</a>: 'Valid tenant user with one of the following roles: Global Administrator, Agent ID Developer.' Permits creating blueprints, owning the resulting Entra app + service principal + agent identity SP, configuring FIC + inheritable permissions on owned blueprints. Doesn't grant tenant-wide admin consent — for that, pair with Application Administrator (delegated grants) or Privileged Role Administrator (Graph application-permission grants). Note this is the <em>Developer</em> role; <strong>Agent ID Administrator</strong> is a separate, higher role that adds <code>microsoft.directory/agentUsers/assignLicense</code> for licensing agentic-user identities.",
+    references: ["agent365-registration-classes.md §3", "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/registration#prerequisites"],
+    related: ["global-administrator-role", "agent-id-administrator-role", "blueprint"] },
+  { id: "application-administrator-role", family: "auth", name: "Application Administrator role",
+    oneLine: "Documented minimum for granting tenant-wide admin consent on delegated permissions. Covers most A365 consent steps.",
+    definition: "Per <a href='https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites' target='_blank'>Microsoft Learn</a>: 'Application Administrator … for granting consent for apps requesting any permission for any API, except Microsoft Graph app roles (application permissions).' Can also create app registrations, manage service principals, manage federated credentials. The Microsoft Graph app-role carve-out means Application Administrator <em>cannot</em> grant Graph application-permission consent — that escalation is the only place S2S/Both classes need Privileged Role Administrator. Cloud Application Administrator and AI Administrator have equivalent scope for the operations A365 uses.",
+    references: ["https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites", "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration#to-add-permissions-and-grant-consent"],
+    related: ["admin-consent", "global-administrator-role", "privileged-role-administrator-role"] },
+  { id: "privileged-role-administrator-role", family: "auth", name: "Privileged Role Administrator role",
+    oneLine: "Required only for Microsoft Graph application-permission consent (S2S / Both registration classes).",
+    definition: "Per <a href='https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites' target='_blank'>Microsoft Learn</a>: 'Privileged Role Administrator, for granting consent for apps requesting <em>any</em> permission, for <em>any</em> API.' This is the one role that fills Application Administrator's Microsoft Graph app-role gap. A365 docs that say 'Global Administrator required' for S2S consent are technically correct (GA is a superset) but PRA is the documented <em>least-privileged</em> answer.",
+    references: ["https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/grant-admin-consent#prerequisites"],
+    related: ["admin-consent", "s2s", "application-administrator-role"] },
+  { id: "ai-administrator-role", family: "auth", name: "AI Administrator role",
+    oneLine: "M365 admin-centre role for installing, activating, and managing agent configurations.",
+    definition: "Per <a href='https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-roles-perms?view=o365-worldwide' target='_blank'>M365 admin-centre roles for agent management</a>: 'Install, modify, approve, and manage agent configurations.' This is the role for uploading custom-agent manifest zips and activating them for users. The A365 publish doc says 'Global Administrator role' but that's overstated — AI Administrator is the documented minimum for the manifest-upload and activation steps.",
+    references: ["https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-roles-perms?view=o365-worldwide", "https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-registry?view=o365-worldwide"],
+    related: ["global-administrator-role", "manifest-zip", "mcp-platform-endpoint"] },
+  { id: "agent-id-administrator-role", family: "auth", name: "Agent ID Administrator role",
+    oneLine: "Adds licence-assignment for agentic-user identities on top of Agent ID Developer's blueprint-management scope.",
+    definition: "Per <a href='https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/permissions-reference#agent-id-administrator' target='_blank'>Entra built-in roles reference</a>: owns <code>microsoft.directory/agentUsers/assignLicense</code> in addition to the blueprint-management actions Agent ID Developer has. Required for the AI Teammate 'full experience' (Copilot licence assignment to the agentic user). License Administrator owns <code>microsoft.directory/users/assignLicense</code> but whether that covers <code>agentUsers</code> object types is not explicitly documented — Agent ID Administrator is the safe answer.",
+    references: ["https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/permissions-reference#agent-id-administrator"],
+    related: ["agent-id-developer-role", "agentic-user-identity"] },
   { id: "client-credentials-grant", family: "auth", name: "client_credentials grant",
     oneLine: "OAuth2 grant type used by S2S agents to acquire tokens with their own clientId + secret.",
     definition: "Standard OAuth2 grant. Agent POSTs to Entra's token endpoint with <code>grant_type=client_credentials</code>, its clientId, clientSecret, and scope (e.g. <code>api://.../.default</code>). Returns a bearer token scoped to the agent's app permissions. No user, no refresh tokens, ~1h validity.",
@@ -2088,14 +2310,14 @@ const classes = [
       { cat: "Auth", label: "OBO + S2S", cls: "t-auth-both" },
       { cat: "Trigger", label: "User or autonomous", cls: "t-trigger-either" },
       { cat: "Audit", label: "User or agent", cls: "t-audit-mixed" },
-      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Admin role", label: "Agent ID Developer + App Admin", cls: "t-role-dev" },
       { cat: "Surface", label: "M365 Copilot", cls: "t-surface-copilot" },
       { cat: "Licensing", label: "Per-agent M365 license", cls: "t-license-yes" },
     ],
     pros: ["Most complete governance story; full Purview/Defender coverage", "Can operate autonomously with its own identity", "Users interact with it like a real team member", "Supports manager hierarchy in Entra"],
-    cons: ["Still Frontier preview (not GA) as of May 2026", "Highest setup complexity", "Admin consent required", "Licensing implications (mailbox/OneDrive license)"],
+    cons: ["Still Frontier preview (not GA) as of May 2026", "Highest setup complexity", "Admin consent required (Application Administrator suffices for delegated grants)", "Licensing implications (mailbox/OneDrive license)"],
     whenToPick: "Agent should appear as a standalone team member in M365 Copilot; needs a user-like identity for OBO flows or for sending mail/calendar invites as itself.",
-    prereqs: "Global Administrator. M365 license for the agent's user account.",
+    prereqs: "Agent ID Developer (blueprint creation) + Application Administrator (delegated-permission admin consent). For the full agentic-user activation: AI Administrator (manifest upload + activation) and Agent ID Administrator (Copilot licence on the agent identity). M365 Copilot licence on the agent user. Global Administrator works as a superset but is not the documented least-privileged answer.",
     learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity",
   },
   { id: "ai-teammate-non-m365", name: "AI Teammate (non-M365)",
@@ -2108,20 +2330,20 @@ const classes = [
       { cat: "Auth", label: "OBO + S2S", cls: "t-auth-both" },
       { cat: "Trigger", label: "User or autonomous", cls: "t-trigger-either" },
       { cat: "Audit", label: "User or agent", cls: "t-audit-mixed" },
-      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Admin role", label: "Agent ID Developer + App Admin", cls: "t-role-dev" },
       { cat: "Surface", label: "Teams channels only", cls: "t-surface-teams" },
       { cat: "Licensing", label: "Per-agent M365 license", cls: "t-license-yes" },
     ],
     pros: ["Same governance and identity depth as AI Teammate (M365)", "Avoids M365 Copilot surface if you want Teams-only distribution", "Simpler endpoint config for Teams-first deployments"],
     cons: ["Still Frontier preview", "Not discoverable from M365 Copilot", "Same licensing overhead as M365 variant"],
     whenToPick: "Teams-channel-only agent; you want the AI Teammate identity model without surfacing in M365 Copilot's Agents tab.",
-    prereqs: "Global Administrator. Teams Developer Portal access for endpoint config.",
+    prereqs: "Agent ID Developer + Application Administrator (delegated consent). Teams Developer Portal access for endpoint config. Agent ID Administrator + M365 licence for the agentic-user activation.",
     learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity",
   },
   { id: "blueprint-only-obo", name: "Blueprint-only with OBO (M365) — CLI DEFAULT",
     flags: "--m365 (no --aiteammate, no --authmode)",
     gaStatus: "ga", gaLabel: "GA — 1 May 2026",
-    tagline: "The default and the safe bet. Service principal only (no Entra user). Delegated permissions; no admin consent needed for OBO scopes. Right for most server-side agents that act on behalf of a calling user.",
+    tagline: "The default and the safe bet. Still gets its own agent identity SP (<code>agentIdentity</code> subtype) — just no agentic user wrapper on top. Delegated permissions; no admin consent needed for OBO scopes. Right for most server-side agents that act on behalf of a calling user.",
     tags: [
       { cat: "Consent", label: "User consent (no admin)", cls: "t-consent-user" },
       { cat: "Identity", label: "SP only", cls: "t-id-sp" },
@@ -2148,14 +2370,14 @@ const classes = [
       { cat: "Auth", label: "S2S (app permissions)", cls: "t-auth-s2s" },
       { cat: "Trigger", label: "Autonomous", cls: "t-trigger-auto" },
       { cat: "Audit", label: "Agent-attributed", cls: "t-audit-agent" },
-      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Admin role", label: "Agent ID Developer + PRA", cls: "t-role-ga" },
       { cat: "Surface", label: "Server-side", cls: "t-surface-server" },
       { cat: "Licensing", label: "Standalone SP licensing", cls: "t-licensing" },
     ],
     pros: ["Enables fully autonomous, non-interactive workloads", "No user session needed; runs 24/7", "Well-understood pattern for background automation"],
     cons: ["Admin consent required for every scope", "App permissions broader than delegated — harder to scope narrowly", "No user context", "Risk of over-permissioned agents"],
     whenToPick: "Scheduled jobs, monitoring agents, batch processing, any non-user-initiated automation calling M365 resources. Pro-code agents called from Databricks jobs / queues / cron.",
-    prereqs: "Global Administrator (mandatory — every app permission needs tenant-wide admin consent).",
+    prereqs: "Agent ID Developer (blueprint creation) + Privileged Role Administrator (Graph application-permission consent — the one role above Application Administrator that grants app-role consent). Global Administrator works but PRA is the documented least-privileged role.",
     learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/setup#setup-all",
   },
   { id: "blueprint-only-both", name: "Blueprint-only with Both Grants (M365)",
@@ -2168,14 +2390,14 @@ const classes = [
       { cat: "Auth", label: "OBO + S2S", cls: "t-auth-both" },
       { cat: "Trigger", label: "Either", cls: "t-trigger-either" },
       { cat: "Audit", label: "Mixed (user/agent)", cls: "t-audit-mixed" },
-      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Admin role", label: "Agent ID Developer + PRA", cls: "t-role-ga" },
       { cat: "Surface", label: "Server-side", cls: "t-surface-server" },
       { cat: "Licensing", label: "Standalone SP licensing", cls: "t-licensing" },
     ],
     pros: ["One agent handles both interactive and background scenarios", "Avoids two separate agents for related workflows", "Single blueprint, single governance surface"],
     cons: ["Most complex permission surface to review", "Admin consent required even for OBO portions when combined with S2S", "Higher blast radius", "Rarely actually necessary"],
     whenToPick: "One agent legitimately needs to both respond to user requests and run autonomous background jobs, and splitting into two is impractical. Genuinely rare.",
-    prereqs: "Global Administrator.",
+    prereqs: "Agent ID Developer + Privileged Role Administrator (the Graph app-permission portion requires PRA; Application Administrator cannot grant it). GA works but is more than required.",
     learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/setup#setup-all",
   },
   { id: "non-dw", name: "Blueprint-based Non-DW Agent",
@@ -2211,16 +2433,16 @@ const decisionTree = {
           { label: "Yes — M365 Copilot surface", outcome: { classId: "ai-teammate-m365", warn: "Note: still Frontier preview, not GA — pick this for trials, not customer prod." } },
           { label: "No — Teams channels only", outcome: { classId: "ai-teammate-non-m365", warn: "Note: still Frontier preview, not GA." } },
         ] },
-  q3: { question: "Is the agent triggered by user actions (chat turns, Copilot invocations) — i.e. there's always a calling user?",
+  q3: { question: "When the agent is invoked, is there a live Entra user whose delegated token the agent can borrow? (A user in Teams / Copilot at the moment of invocation = yes. A scheduled Databricks / Airflow job / event-triggered pipeline = no — even though <em>you</em> set up the schedule.)",
         options: [
-          { label: "Yes — user invokes it", outcome: { classId: "blueprint-only-obo", ok: "GA as of 1 May 2026, CLI default, no admin consent needed. The safe bet for most agents." } },
-          { label: "No — runs autonomously", next: "q4" },
-          { label: "Both — sometimes user-driven, sometimes autonomous", next: "q5" },
+          { label: "Yes — a calling user's token is always available", outcome: { classId: "blueprint-only-obo", ok: "GA as of 1 May 2026, CLI default, no admin consent needed. The safe bet for most agents." } },
+          { label: "No — runs without an Entra user (scheduled, event-triggered, API-driven)", next: "q4" },
+          { label: "Both — sometimes a user, sometimes autonomous", next: "q5" },
         ] },
-  q4: { question: "Is the agent always autonomous (cron, queue, Databricks job, scheduled task), with no user context?",
+  q4: { question: "Is it always autonomous (no Entra user token in the chain — e.g. cron, queue, Databricks scheduled job, blob-arrival pipeline, customer-system API call)?",
         options: [
-          { label: "Yes — fully autonomous", outcome: { classId: "blueprint-only-s2s", ok: "Infra-GA. Admin consent required for every scope. Right for pro-code background agents." } },
-          { label: "Actually it might need user context sometimes", next: "q5" },
+          { label: "Yes — fully autonomous", outcome: { classId: "blueprint-only-s2s", ok: "Infra-GA. Admin consent (Privileged Role Administrator) required for Graph app-role grants. Right for pro-code background agents." } },
+          { label: "Actually it might need a user token sometimes", next: "q5" },
         ] },
   q5: { question: "Did Microsoft's A365 product team specifically tell you to use the 'non-DW' variant?",
         options: [

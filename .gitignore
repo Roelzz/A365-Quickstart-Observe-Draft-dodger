@@ -51,6 +51,11 @@ manifest/*.zip
 # Purview Audit query results (per-run JSONL dumps from scripts/query-audit.sh — contain tenant + agent telemetry)
 audit-results/
 
+# Sandboxed per-registration artifacts from scripts/demo-reregister.sh scenario E.
+# Each demo registration runs inside script-runs/<sanitized-name>/ and produces .env
+# + a365.generated.config.json + manifest/* with the demo blueprint's client secret.
+script-runs/
+
 # Local git worktrees — project-local convention (cd .worktrees/<branch>/ to test in-flight branches)
 .worktrees/
 
