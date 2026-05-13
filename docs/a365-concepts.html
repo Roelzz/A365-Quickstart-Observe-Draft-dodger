@@ -1,0 +1,2868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Microsoft Agent 365 — the conceptual model</title>
+<script src="https://unpkg.com/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --color-primary: #0078d4;
+    --color-primary-hover: #106ebe;
+    --color-primary-active: #005a9e;
+    --color-primary-soft: #deecf9;
+    --color-bg: #faf9f8;
+    --color-surface: #ffffff;
+    --color-surface-alt: #f3f2f1;
+    --color-text: #323130;
+    --color-text-muted: #605e5c;
+    --color-text-subtle: #8a8886;
+    --color-border: #edebe9;
+    --color-border-strong: #d2d0ce;
+    --color-success: #107c10;
+    --color-success-soft: #dff6dd;
+    --color-warning: #ca5010;
+    --color-warning-soft: #fed9cc;
+    --color-frontier: #5c2d91;
+    --color-frontier-soft: #e9d5ff;
+    --color-danger: #a4262c;
+    --color-danger-soft: #fde7e9;
+    --shadow-depth-4: 0 1.6px 3.6px rgba(0,0,0,0.13), 0 0.3px 0.9px rgba(0,0,0,0.10);
+    --shadow-depth-8: 0 3.2px 7.2px rgba(0,0,0,0.13), 0 0.6px 1.8px rgba(0,0,0,0.10);
+    --shadow-depth-16: 0 6.4px 14.4px rgba(0,0,0,0.13), 0 1.2px 3.6px rgba(0,0,0,0.10);
+    --radius-card: 4px;
+    --radius-button: 2px;
+    --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "Cascadia Code", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    background: var(--color-bg);
+    line-height: 1.5;
+    font-size: 14px;
+  }
+  a { color: var(--color-primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: var(--font-mono); font-size: 0.92em; }
+  code {
+    background: var(--color-surface-alt);
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid var(--color-border);
+  }
+  h1, h2, h3, h4 { font-weight: 600; color: var(--color-text); margin: 0 0 12px; }
+  h1 { font-size: 28px; line-height: 1.2; }
+  h2 { font-size: 22px; line-height: 1.25; margin-top: 32px; }
+  h3 { font-size: 18px; margin-top: 24px; }
+  h4 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-muted); margin-top: 16px; }
+  p { margin: 0 0 12px; }
+  hr { border: 0; border-top: 1px solid var(--color-border); margin: 24px 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+  th { font-weight: 600; background: var(--color-surface-alt); }
+
+  /* Header */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: 56px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 24px;
+  }
+  .topbar-title { font-size: 16px; font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 10px; }
+  .topbar-search {
+    flex: 1;
+    max-width: 480px;
+    position: relative;
+  }
+  .topbar-search input {
+    width: 100%;
+    height: 32px;
+    padding: 0 12px 0 36px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-button);
+    background: var(--color-surface);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--color-text);
+    transition: border-color 0.1s;
+  }
+  .topbar-search input:focus { outline: none; border-color: var(--color-primary); }
+  .topbar-search::before {
+    content: "⌕";
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-text-muted);
+    font-size: 16px;
+    pointer-events: none;
+  }
+  .topbar-search-hits {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-text-subtle);
+    font-size: 12px;
+  }
+
+  /* Layout */
+  .layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .sidebar {
+    position: sticky;
+    top: 56px;
+    align-self: start;
+    height: calc(100vh - 56px);
+    overflow-y: auto;
+    padding: 24px 16px;
+    border-right: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar a {
+    display: block;
+    padding: 7px 12px;
+    border-radius: var(--radius-button);
+    color: var(--color-text);
+    font-size: 13px;
+    border-left: 3px solid transparent;
+    transition: background-color 0.1s, border-color 0.1s;
+  }
+  .sidebar a:hover { background: var(--color-surface-alt); text-decoration: none; }
+  .sidebar a.active {
+    background: var(--color-primary-soft);
+    border-left-color: var(--color-primary);
+    color: var(--color-primary-active);
+    font-weight: 600;
+  }
+  .sidebar-section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--color-text-subtle);
+    padding: 16px 12px 6px;
+    font-weight: 600;
+  }
+
+  .content { padding: 32px 48px 80px; max-width: 1100px; }
+  section { margin-bottom: 56px; }
+  section .section-eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 6px;
+  }
+
+  /* Hero */
+  .hero { padding: 32px 0 16px; }
+  .hero-title { font-size: 36px; line-height: 1.15; margin-bottom: 12px; }
+  .hero-lede { font-size: 16px; color: var(--color-text-muted); max-width: 720px; }
+  .hero-ctas { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 16px;
+    border-radius: var(--radius-button);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.1s, border-color 0.1s;
+    text-decoration: none;
+  }
+  .button:hover { background: var(--color-surface-alt); text-decoration: none; }
+  .button.primary {
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+  }
+  .button.primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+  .button.primary:active { background: var(--color-primary-active); }
+  .button.subtle { background: transparent; border-color: transparent; color: var(--color-primary); }
+  .button.subtle:hover { background: var(--color-primary-soft); }
+
+  /* Cards */
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 16px 20px;
+    box-shadow: var(--shadow-depth-4);
+    transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .card.interactive { cursor: pointer; }
+  .card.interactive:hover { box-shadow: var(--shadow-depth-8); border-color: var(--color-border-strong); }
+  .card.expanded { box-shadow: var(--shadow-depth-16); border-color: var(--color-primary); }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border: 1px solid transparent;
+  }
+  .badge.ga { background: var(--color-success-soft); color: var(--color-success); border-color: var(--color-success); }
+  .badge.infra-ga { background: var(--color-primary-soft); color: var(--color-primary-active); border-color: var(--color-primary); }
+  .badge.frontier { background: var(--color-frontier-soft); color: var(--color-frontier); border-color: var(--color-frontier); }
+  .badge.tbc { background: var(--color-surface-alt); color: var(--color-text-muted); border-color: var(--color-border-strong); }
+  .badge.family-identity { background: #ebf3ff; color: #1e4179; }
+  .badge.family-auth { background: #fbf3e1; color: #8e5b04; }
+  .badge.family-surface { background: #e8f6e7; color: #146814; }
+  .badge.family-observability { background: #f4e8ff; color: #5c2d91; }
+  .badge.family-plumbing { background: #fde7e9; color: #a4262c; }
+  .badge.family-lifecycle { background: #e1f1f3; color: #035e6e; }
+
+  /* Two-axis primer */
+  .axis-grid {
+    display: grid;
+    grid-template-columns: 100px repeat(3, 1fr);
+    grid-template-rows: 40px repeat(2, auto);
+    gap: 8px;
+    margin-top: 24px;
+  }
+  .axis-cell {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.1s, background-color 0.1s;
+  }
+  .axis-cell:hover { border-color: var(--color-primary); background: var(--color-primary-soft); }
+  .axis-header {
+    background: transparent;
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .axis-cell .cell-class { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .axis-cell .cell-flags { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); }
+  .axis-cell .badge { margin-top: 6px; }
+
+  /* Decision tree */
+  .decision-tree-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 24px;
+    box-shadow: var(--shadow-depth-4);
+    margin-top: 16px;
+  }
+  .dt-question { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+  .dt-options { display: flex; gap: 12px; flex-wrap: wrap; }
+  .dt-option {
+    flex: 1;
+    min-width: 200px;
+    padding: 14px 16px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: all 0.1s;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    text-align: left;
+  }
+  .dt-option:hover { border-color: var(--color-primary); background: var(--color-primary-soft); }
+  .dt-progress {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .dt-progress-dot {
+    width: 32px;
+    height: 4px;
+    background: var(--color-border);
+    border-radius: 2px;
+  }
+  .dt-progress-dot.active { background: var(--color-primary); }
+  .dt-progress-dot.answered { background: var(--color-primary-soft); }
+  .dt-controls { margin-top: 16px; display: flex; gap: 8px; }
+  .dt-result {
+    padding: 20px;
+    background: var(--color-success-soft);
+    border-left: 4px solid var(--color-success);
+    border-radius: var(--radius-card);
+  }
+  .dt-result.frontier { background: var(--color-frontier-soft); border-left-color: var(--color-frontier); }
+  .dt-result.warning { background: var(--color-warning-soft); border-left-color: var(--color-warning); }
+  .dt-result h3 { margin-top: 0; }
+  .dt-history {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .dt-history-item { display: flex; gap: 8px; padding: 2px 0; }
+  .dt-history-q { color: var(--color-text-muted); }
+  .dt-history-a { font-weight: 600; color: var(--color-text); }
+
+  /* Class cards */
+  .class-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .class-card { padding: 20px; }
+  .class-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .class-card-name { font-size: 16px; font-weight: 600; margin: 0; }
+  .class-card-flags {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text-muted);
+    background: var(--color-surface-alt);
+    padding: 6px 10px;
+    border-radius: var(--radius-button);
+    margin-top: 12px;
+    display: inline-block;
+  }
+  .class-card-tagline { color: var(--color-text-muted); font-size: 13px; margin-top: 12px; }
+  .class-card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+  .class-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 11px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+  .class-tag-label { opacity: 0.7; font-weight: 500; }
+  .class-tag.t-consent-none { background:#dff6dd; color:#107c10; border-color:#107c10; }
+  .class-tag.t-consent-user { background:#fff4d6; color:#a07a00; border-color:#a07a00; }
+  .class-tag.t-consent-admin { background:#fde7e9; color:#a4262c; border-color:#a4262c; }
+  .class-tag.t-auth-obo { background:#deecf9; color:#0078d4; border-color:#0078d4; }
+  .class-tag.t-auth-s2s { background:#fff4d6; color:#a07a00; border-color:#a07a00; }
+  .class-tag.t-auth-both { background:#f4e8ff; color:#5c2d91; border-color:#5c2d91; }
+  .class-tag.t-id-sp { background:#deecf9; color:#0078d4; border-color:#0078d4; }
+  .class-tag.t-id-user { background:#f4e8ff; color:#5c2d91; border-color:#5c2d91; }
+  .class-tag.t-trigger-user { background:#dff6dd; color:#107c10; border-color:#107c10; }
+  .class-tag.t-trigger-auto { background:#fff4d6; color:#a07a00; border-color:#a07a00; }
+  .class-tag.t-trigger-either { background:#e1f1f3; color:#035e6e; border-color:#035e6e; }
+  .class-tag.t-audit-user { background:#dff6dd; color:#107c10; border-color:#107c10; }
+  .class-tag.t-audit-agent { background:#fff4d6; color:#a07a00; border-color:#a07a00; }
+  .class-tag.t-audit-mixed { background:#e1f1f3; color:#035e6e; border-color:#035e6e; }
+  .class-tag.t-role-dev { background:#dff6dd; color:#107c10; border-color:#107c10; }
+  .class-tag.t-role-ga { background:#fde7e9; color:#a4262c; border-color:#a4262c; }
+  .class-tag.t-surface-copilot { background:#deecf9; color:#0078d4; border-color:#0078d4; }
+  .class-tag.t-surface-teams { background:#e1f1f3; color:#035e6e; border-color:#035e6e; }
+  .class-tag.t-surface-server { background:#e8e8e8; color:#444; border-color:#888; }
+  .class-tag.t-license-yes { background:#fde7e9; color:#a4262c; border-color:#a4262c; }
+  .class-tag.t-license-no { background:#dff6dd; color:#107c10; border-color:#107c10; }
+  .class-tag.t-licensing { background:#fff4d6; color:#a07a00; border-color:#a07a00; }
+  .class-tag.t-internal { background:#e8e8e8; color:#444; border-color:#888; }
+  .class-card-body { margin-top: 16px; display: none; }
+  .class-card.expanded .class-card-body { display: block; }
+  .class-card-body h4 { font-size: 12px; margin-top: 16px; margin-bottom: 6px; }
+  .class-card-body ul { margin: 0; padding-left: 20px; font-size: 13px; }
+  .class-card-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+  /* Concept browser */
+  .pivot-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 16px;
+    overflow-x: auto;
+  }
+  .pivot-tab {
+    padding: 10px 16px;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--color-text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.1s, border-color 0.1s;
+    white-space: nowrap;
+  }
+  .pivot-tab:hover { color: var(--color-text); }
+  .pivot-tab.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+    font-weight: 600;
+  }
+  .pivot-tab .tab-count {
+    margin-left: 6px;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--color-surface-alt);
+    color: var(--color-text-muted);
+  }
+  .pivot-tab.active .tab-count { background: var(--color-primary-soft); color: var(--color-primary-active); }
+
+  .concept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .concept-card { padding: 14px 16px; }
+  .concept-card-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .concept-card-oneline { color: var(--color-text-muted); font-size: 12px; line-height: 1.4; }
+  .concept-card-body { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); font-size: 13px; }
+  .concept-card.expanded .concept-card-body { display: block; }
+  .concept-card.pulse { animation: pulse 1.2s ease-out; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 var(--color-primary), var(--shadow-depth-16); }
+    100% { box-shadow: 0 0 0 12px rgba(0,120,212,0), var(--shadow-depth-4); }
+  }
+  .concept-card-citation { color: var(--color-text-subtle); font-size: 11px; margin-top: 12px; font-family: var(--font-mono); }
+  .concept-card-related { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .related-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    font-size: 11px;
+    color: var(--color-primary);
+    cursor: pointer;
+    transition: background-color 0.1s;
+  }
+  .related-chip:hover { background: var(--color-primary-soft); }
+  .concept-card-flags { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); margin-top: 8px; }
+
+  /* Comparator */
+  .comparator-toggle {
+    display: inline-flex;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-button);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .comparator-toggle button {
+    border: 0;
+    padding: 8px 16px;
+    background: var(--color-surface);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    border-right: 1px solid var(--color-border);
+  }
+  .comparator-toggle button:last-child { border-right: 0; }
+  .comparator-toggle button.active {
+    background: var(--color-primary);
+    color: #fff;
+  }
+  .comparator-rows { display: flex; flex-direction: column; gap: 8px; }
+  .comparator-row {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 14px 18px;
+    display: grid;
+    gap: 12px;
+  }
+  .comparator-row.mode-both { grid-template-columns: 180px 1fr 1fr; }
+  .comparator-row.mode-single { grid-template-columns: 180px 1fr; }
+  .comparator-label { font-weight: 600; color: var(--color-text-muted); font-size: 13px; }
+  .comparator-value { font-size: 13px; }
+  .comparator-value .pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: var(--color-surface-alt);
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .comparator-row.diff-highlight { box-shadow: inset 3px 0 0 var(--color-warning); }
+
+  /* Animation */
+  .animation-tabs { display: flex; gap: 0; margin-bottom: 16px; }
+  .animation-tabs button {
+    padding: 10px 20px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+  .animation-tabs button.active {
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+  }
+  .animation-tabs button:first-child { border-radius: var(--radius-button) 0 0 var(--radius-button); border-right: 0; }
+  .animation-tabs button:last-child { border-radius: 0 var(--radius-button) var(--radius-button) 0; }
+  .animation-stage {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-depth-4);
+  }
+  .animation-svg { width: 100%; height: 380px; display: block; }
+  .actor-group rect.actor-box {
+    fill: var(--color-surface);
+    stroke: var(--color-border-strong);
+    stroke-width: 1.5;
+    rx: 6;
+  }
+  .actor-group.active rect.actor-box {
+    fill: var(--color-primary-soft);
+    stroke: var(--color-primary);
+  }
+  .actor-group text { font-family: var(--font-sans); font-size: 12px; font-weight: 600; fill: var(--color-text); }
+  .token-capsule {
+    fill: var(--color-warning-soft);
+    stroke: var(--color-warning);
+    stroke-width: 1.5;
+    rx: 12;
+  }
+  .token-text { font-family: var(--font-mono); font-size: 11px; fill: var(--color-text); pointer-events: none; }
+  .path-line { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 3 3; fill: none; }
+  .path-line.active { stroke: var(--color-primary); stroke-dasharray: none; stroke-width: 2; }
+  .animation-controls { display: flex; gap: 8px; align-items: center; padding: 12px 16px; background: var(--color-surface-alt); border-radius: var(--radius-card); }
+  .animation-step-info { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); padding: 14px 18px; margin-top: 12px; }
+  .animation-step-counter { color: var(--color-text-muted); font-size: 12px; margin-bottom: 4px; }
+  .animation-step-desc { font-size: 14px; line-height: 1.5; }
+
+  /* Reference tables */
+  .reference-block {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-depth-4);
+  }
+  .reference-block summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    font-weight: 600;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .reference-block summary::after { content: "▾"; color: var(--color-text-muted); transition: transform 0.15s; }
+  .reference-block[open] summary::after { transform: rotate(180deg); }
+  .reference-block-body { padding: 0 20px 20px; }
+
+  /* Footer */
+  footer {
+    margin-top: 64px;
+    padding: 32px 0;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 13px;
+  }
+  footer h4 { color: var(--color-text); }
+
+  /* Visual blocks (images + collapsible Mermaid containers from the PPTX deck) */
+  .visual-block {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    margin: 16px 0;
+    box-shadow: var(--shadow-depth-4);
+    overflow: hidden;
+  }
+  .visual-block summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    font-weight: 600;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--color-surface-alt);
+  }
+  .visual-block summary::after { content: "▾"; color: var(--color-text-muted); transition: transform 0.15s; }
+  .visual-block[open] summary::after { transform: rotate(180deg); }
+  .visual-block-body { padding: 20px; }
+  .visual-block-body img { max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: var(--radius-card); }
+  .visual-block-caption {
+    margin-top: 12px;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    font-style: italic;
+    text-align: center;
+  }
+  .mermaid-host { display: flex; justify-content: center; padding: 16px 0; }
+  .mermaid-host .mermaid { width: 100%; }
+  .topbar-logo {
+    height: 28px;
+    width: 28px;
+    border-radius: 3px;
+    object-fit: contain;
+  }
+
+  /* Interactive identity-model widget (replaces the raster image) */
+  .identity-model {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 16px;
+  }
+  .im-node {
+    background: var(--color-primary);
+    color: #fff;
+    border-radius: 10px;
+    padding: 14px 22px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s, background-color 0.12s;
+    box-shadow: var(--shadow-depth-4);
+    width: 100%;
+    max-width: 480px;
+    border: 0;
+  }
+  .im-node:hover, .im-node:focus { transform: translateY(-2px); box-shadow: var(--shadow-depth-16); outline: none; background: var(--color-primary-hover); }
+  .im-node.im-principal { background: #1976d2; }
+  .im-node.im-principal:hover, .im-node.im-principal:focus { background: #1565c0; }
+  .im-node.im-identity { background: #2e7d32; }
+  .im-node.im-identity:hover, .im-node.im-identity:focus { background: #1b5e20; }
+  .im-node.im-user { background: #b8860b; }
+  .im-node.im-user:hover, .im-node.im-user:focus { background: #8b6508; }
+  .im-node.im-owner { background: #5e35b1; }
+  .im-node.im-owner:hover, .im-node.im-owner:focus { background: #4527a0; }
+  .im-node.im-sponsor { background: #b71c1c; }
+  .im-node.im-sponsor:hover, .im-node.im-sponsor:focus { background: #8e1414; }
+  .im-eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    opacity: 0.85;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .im-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .im-sub { font-size: 12px; line-height: 1.45; opacity: 0.95; }
+  .im-sub code { background: rgba(255,255,255,0.18); color: #fff; border: 0; padding: 0 4px; }
+  .im-arrow {
+    width: 2px;
+    height: 36px;
+    background: var(--color-border-strong);
+    position: relative;
+  }
+  .im-arrow::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid var(--color-border-strong);
+  }
+  .im-arrow::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .im-branches {
+    display: flex;
+    gap: 280px;
+    height: 36px;
+    align-items: stretch;
+    position: relative;
+  }
+  .im-branches.im-branches-3 {
+    gap: 160px;
+  }
+  .im-branch-arrow {
+    width: 2px;
+    background: var(--color-border-strong);
+    position: relative;
+  }
+  .im-branch-arrow.im-dashed {
+    background: repeating-linear-gradient(to bottom, var(--color-border-strong) 0 4px, transparent 4px 8px);
+  }
+  .im-branch-arrow::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid var(--color-border-strong);
+  }
+  .im-branch-arrow::before {
+    content: attr(data-label);
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .im-branch-arrow.im-solid::before { left: 14px; right: auto; }
+  .im-leaves {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  }
+  .im-leaves .im-node { max-width: 340px; flex: 1; min-width: 280px; }
+  @media (max-width: 760px) {
+    .im-branches { gap: 80px; }
+    .im-leaves { flex-direction: column; align-items: center; }
+  }
+
+  /* Mechanism panel for §2.5 external registration */
+  .role-checklist {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .role-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-depth-4);
+  }
+  .role-card h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--color-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .role-card ol, .role-card ul { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.5; }
+  .role-card code { font-size: 11px; }
+
+  /* Hidden by search */
+  .hidden { display: none !important; }
+
+  /* Mobile */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .content { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title">
+    <img class="topbar-logo" src="assets/a365-logo.png" alt="Agent 365" onerror="this.style.display='none'">
+    Microsoft Agent 365 — Conceptual Model
+  </div>
+  <div class="topbar-search">
+    <input type="search" id="search" placeholder="Search concepts (e.g. OBO, blueprint, OtelWrite)…" autocomplete="off">
+    <span class="topbar-search-hits" id="search-hits"></span>
+  </div>
+  <a class="button subtle" href="#footer">References</a>
+</header>
+
+<div class="layout">
+
+<aside class="sidebar" id="sidebar">
+  <nav>
+    <div class="sidebar-section-label">Start here</div>
+    <a href="#hero" data-target="hero">Overview</a>
+    <a href="#two-axis" data-target="two-axis">Two axes &amp; identity model</a>
+    <a href="#creation-paths" data-target="creation-paths">Where agents come from</a>
+    <a href="#decision-tree" data-target="decision-tree">Pick a class</a>
+    <a href="#classes" data-target="classes">The 6 classes</a>
+    <div class="sidebar-section-label">Reference</div>
+    <a href="#concepts" data-target="concepts">Concept browser</a>
+    <a href="#comparator" data-target="comparator">OBO vs S2S</a>
+    <a href="#animation" data-target="animation">Token flow</a>
+    <a href="#reference" data-target="reference">Tables</a>
+    <a href="#footer" data-target="footer">See also</a>
+  </nav>
+</aside>
+
+<main class="content">
+
+<!-- §1 HERO -->
+<section id="hero" class="hero">
+  <div class="section-eyebrow">Agent 365 · GA 1 May 2026</div>
+  <h1 class="hero-title">The conceptual model behind Microsoft Agent 365</h1>
+
+  <h3 style="margin-top:24px;">What is Agent 365 (A365)?</h3>
+  <p class="hero-lede">Microsoft Agent 365 is Microsoft's IT admin control plane for AI agents. It gives organisations real-time visibility into their agentic environment, a centralised registry of all agents, and the ability to apply identity, security, governance, and lifecycle management controls at scale.</p>
+  <p class="hero-lede">Every agent registered in A365 is defined by a <strong>blueprint</strong>, which is essentially the template from which agent instances are created. Every A365 agent is a point in a small grid: <strong>own identity (yes/no)</strong> × <strong>auth mode (OBO / S2S / both)</strong>. The choice of grid cell determines what shows up in Entra, who consents, how spans get attributed, and what your audit story looks like. This page maps that grid, walks you to the right cell for your scenario, and lets you click through every concept in the stack — 85 of them, with animated token flows for the two most common modes.</p>
+
+  <div class="hero-ctas">
+    <a class="button primary" href="#decision-tree">Pick a class</a>
+    <a class="button" href="#concepts">Browse concepts</a>
+    <a class="button" href="#animation">Watch the token flow</a>
+  </div>
+
+  <details class="visual-block" style="margin-top:28px;">
+    <summary>The whole stack on one diagram (five-plane reference)</summary>
+    <div class="visual-block-body">
+      <div class="mermaid-host">
+<div class="mermaid">
+flowchart TB
+    classDef built fill:#fff4d6,stroke:#a07a00,color:#000
+    classDef identity fill:#deecf9,stroke:#0078d4,color:#000
+    classDef mgmt fill:#e1f5d1,stroke:#3a7d1c,color:#000
+    classDef interop fill:#f4e8ff,stroke:#5c2d91,color:#000
+    classDef security fill:#fde7e9,stroke:#a4262c,color:#000
+
+    subgraph built_p["Where agents are built"]
+        cs["Copilot Studio"]:::built
+        ab["M365 Agent Builder"]:::built
+        af["Azure AI Foundry"]:::built
+        sdk["A365 SDK"]:::built
+        ext["External (SAP, ServiceNow, ...)"]:::built
+    end
+
+    subgraph identity_p["Identity plane (Entra)"]
+        bp["Blueprint"]:::identity
+        bpp["Blueprint Principal"]:::identity
+        aid["Agent Identity (SP)"]:::identity
+        au["Agent User (optional)"]:::identity
+        gov["ID Governance"]:::identity
+    end
+
+    subgraph mgmt_p["Management plane (A365)"]
+        reg["Agent Registry"]:::mgmt
+        coll["Collections"]:::mgmt
+        admin["Admin Center"]:::mgmt
+        map["Agent Map"]:::mgmt
+    end
+
+    subgraph interop_p["Interoperability plane"]
+        otel["Observability (OTel)"]:::interop
+        mcp["MCP Servers"]:::interop
+        a2a["A2A Protocol"]:::interop
+        notif["Notifications"]:::interop
+        wiq["Work IQ"]:::interop
+    end
+
+    subgraph security_p["Security plane"]
+        gsa["Global Secure Access"]:::security
+        ca["Conditional Access"]:::security
+        def["Defender"]:::security
+        pur["Purview"]:::security
+        sen["Sentinel"]:::security
+    end
+
+    built_p --> identity_p --> mgmt_p
+    mgmt_p --> interop_p
+    mgmt_p --> security_p
+</div>
+      </div>
+      <div class="visual-block-caption">Reproduced from <em>Agent 365 conc.pptx</em> slide 4 — the five-plane reference architecture.</div>
+    </div>
+  </details>
+</section>
+
+<!-- §2 TWO-AXIS PRIMER -->
+<section id="two-axis">
+  <div class="section-eyebrow">Section 2</div>
+  <h2>Two fundamental axes</h2>
+  <p>Every A365 registration class can be placed on a 2×3 grid. The own-identity axis determines whether the agent gets its own Entra agentic user (AI Teammate) or just a service principal (Blueprint-only). The auth-mode axis determines how it acquires tokens at runtime. Hover any cell to see the corresponding class.</p>
+
+  <h3 style="margin-top:28px;">Axis 1: Own Identity (Y axis) — AI Teammate vs Blueprint-only</h3>
+  <p>This is the big one. It determines whether your agent gets its own full Entra identity or just a service principal.</p>
+
+  <h4>AI Teammate (top row)</h4>
+  <p>An AI teammate operates in Microsoft 365 using its own agent identity. When you create an agent identity blueprint, the Agent 365 CLI provisions a <strong>Microsoft Entra Agent ID</strong> for your agent, which is a first-class identity in your tenant, subject to the same enterprise governance policies as human users.</p>
+  <p>In plain terms: the agent gets its own user account. Agentic users can be assigned licences like Microsoft 365 E5 or Teams Enterprise, have their own mailbox and OneDrive storage, appear in the org chart, and can be @mentioned in Teams and documents. Your agent can literally send emails from its own mailbox, show up in org charts, and be treated like a colleague. That's what "AI Teammate" means.</p>
+
+  <h4>Blueprint-only (bottom row)</h4>
+  <p>No dedicated user account. Agents (not AI teammates) don't need a config file. Use <code>a365 setup all --agent-name &lt;name&gt;</code> and the CLI resolves your tenant and client app automatically. You get a service principal in Entra, but no M365 user identity. Simpler, less overhead, less licensing cost, and it's the default <code>--m365</code> mode.</p>
+
+  <h3 style="margin-top:28px;">Axis 2: Auth Mode (X axis) — How the agent gets tokens at runtime</h3>
+
+  <h4>OBO / Delegated (left column)</h4>
+  <p><strong>On-Behalf-Of.</strong> This flow enables an agent to act on behalf of a user. The agent receives a user's delegated token, exchanges it to perform actions as if the user is performing them, and operates with the user's permissions and context. Classic scenario: a user triggers the agent, and the agent does things as that user. Access is scoped to what the triggering user is allowed to do.</p>
+
+  <h4>S2S / App Permissions (middle column)</h4>
+  <p><strong>Service-to-Service.</strong> The agent authenticates using its own credentials (agent blueprint credentials), operates independently with its own assigned permissions, and has its own identity separate from any user. This flow is ideal for autonomous agent operations such as scheduled tasks, monitoring, sending emails from the agent's mailbox, or background processing without user interaction. No user needs to be present. The agent runs on its own authority.</p>
+
+  <h4>Both (right column)</h4>
+  <p>The agent can do either. Flexible, but also more complex to govern.</p>
+  <div class="axis-grid" id="axis-grid">
+    <div class="axis-header"></div>
+    <div class="axis-header">OBO (delegated)</div>
+    <div class="axis-header">S2S (app perms)</div>
+    <div class="axis-header">Both</div>
+    <div class="axis-header" style="writing-mode:vertical-rl; transform:rotate(180deg); justify-self:center;">AI Teammate</div>
+    <div class="axis-cell" data-class-id="ai-teammate-m365">
+      <div class="cell-class">AI Teammate (M365)</div>
+      <div class="cell-flags">--m365 --aiteammate true</div>
+      <span class="badge frontier">Frontier</span>
+    </div>
+    <div class="axis-cell" data-class-id="ai-teammate-m365">
+      <div class="cell-class">AI Teammate + S2S</div>
+      <div class="cell-flags">--m365 --aiteammate true --authmode s2s</div>
+      <span class="badge frontier">Frontier</span>
+    </div>
+    <div class="axis-cell" data-class-id="ai-teammate-m365">
+      <div class="cell-class">AI Teammate + Both</div>
+      <div class="cell-flags">--m365 --aiteammate true --authmode both</div>
+      <span class="badge frontier">Frontier</span>
+    </div>
+    <div class="axis-header" style="writing-mode:vertical-rl; transform:rotate(180deg); justify-self:center;">Blueprint-only</div>
+    <div class="axis-cell" data-class-id="blueprint-only-obo">
+      <div class="cell-class">Blueprint-only OBO</div>
+      <div class="cell-flags">--m365 (default)</div>
+      <span class="badge ga">GA</span>
+    </div>
+    <div class="axis-cell" data-class-id="blueprint-only-s2s">
+      <div class="cell-class">Blueprint-only S2S</div>
+      <div class="cell-flags">--m365 --authmode s2s</div>
+      <span class="badge infra-ga">Infra GA</span>
+    </div>
+    <div class="axis-cell" data-class-id="blueprint-only-both">
+      <div class="cell-class">Blueprint-only Both</div>
+      <div class="cell-flags">--m365 --authmode both</div>
+      <span class="badge infra-ga">Infra GA</span>
+    </div>
+  </div>
+  <p style="margin-top:24px; color:var(--color-text-muted); font-size:13px;">There's a seventh class — <a href="#" data-jump-class="non-dw">Blueprint-based Non-DW agent</a> — that sits outside this grid. It's an internal Microsoft variant; only pick it if A365 product team directed you.</p>
+
+  <details class="visual-block" style="margin-top:24px;">
+    <summary>The 6 cells in plain text — CLI flags and GA status</summary>
+    <div class="visual-block-body">
+      <table>
+        <thead>
+          <tr><th>Class</th><th>CLI flags</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>AI Teammate (OBO)</td><td><code>--m365 --aiteammate true</code></td><td><span class="badge frontier">Frontier</span></td></tr>
+          <tr><td>AI Teammate + S2S</td><td><code>--m365 --aiteammate true --authmode s2s</code></td><td><span class="badge frontier">Frontier</span></td></tr>
+          <tr><td>AI Teammate + Both</td><td><code>--m365 --aiteammate true --authmode both</code></td><td><span class="badge frontier">Frontier</span></td></tr>
+          <tr><td>Blueprint-only OBO</td><td><code>--m365</code> (default)</td><td><span class="badge ga">GA</span></td></tr>
+          <tr><td>Blueprint-only S2S</td><td><code>--m365 --authmode s2s</code></td><td><span class="badge infra-ga">Infra GA</span></td></tr>
+          <tr><td>Blueprint-only Both</td><td><code>--m365 --authmode both</code></td><td><span class="badge infra-ga">Infra GA</span></td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:12px; color:var(--color-text-muted); font-size:13px;"><strong>GA</strong> means generally available and production-ready. <strong>Infra GA</strong> means the underlying infrastructure is GA but the full experience may still be maturing. <strong>Frontier</strong> is a private preview programme. You need to be enrolled to access AI Teammate registration classes, as these features are still in active development and subject to change.</p>
+    </div>
+  </details>
+
+  <details class="visual-block" open style="margin-top:24px;">
+    <summary>Identity-model diagram — click any node to open its concept card</summary>
+    <div class="visual-block-body">
+      <div class="identity-model" role="figure" aria-label="A365 identity model: Blueprint, Blueprint Principal, Agent Identity, Agent User, Human Sponsor">
+        <div class="im-node im-blueprint" data-concept-jump="blueprint" tabindex="0">
+          <div class="im-eyebrow">Step 1 · The template</div>
+          <div class="im-title">Agent Identity Blueprint</div>
+          <div class="im-sub">Entra App Registration (<code>agent</code> OData type)<br/>Defines: permissions, roles, configuration<br/>One per agent type · multi-tenant</div>
+        </div>
+        <div class="im-arrow" data-label="added to your tenant"></div>
+        <div class="im-node im-principal" data-concept-jump="blueprint-principal" tabindex="0">
+          <div class="im-eyebrow">Step 2 · Your tenant's copy</div>
+          <div class="im-title">Blueprint Principal</div>
+          <div class="im-sub">Service Principal of the blueprint app<br/>Created when blueprint enters tenant<br/>Holds credentials, creates Agent Identities</div>
+        </div>
+        <div class="im-arrow" data-label="creates"></div>
+        <div class="im-node im-identity" data-concept-jump="agent-identity" tabindex="0">
+          <div class="im-eyebrow">Step 3 · The account</div>
+          <div class="im-title">Agent Identity</div>
+          <div class="im-sub">Service Principal (subtype <code>agent</code>, single-tenant)<br/>No stored credentials · token-based auth<br/>One per deployed agent instance</div>
+        </div>
+        <div class="im-branches im-branches-3">
+          <div class="im-branch-arrow im-dashed" data-label="optional"></div>
+          <div class="im-branch-arrow im-solid" data-label="always has"></div>
+          <div class="im-branch-arrow im-solid" data-label="always has"></div>
+        </div>
+        <div class="im-leaves">
+          <div class="im-node im-user" data-concept-jump="agentic-user-identity" tabindex="0">
+            <div class="im-eyebrow">Optional · The presence</div>
+            <div class="im-title">Agent User</div>
+            <div class="im-sub">Entra User object (no password, federated credential)<br/>Mailbox · OneDrive · Teams chat · org chart<br/>1:1 with Agent Identity</div>
+          </div>
+          <div class="im-node im-owner" data-concept-jump="agent-owner-sponsor" tabindex="0">
+            <div class="im-eyebrow">Mandatory · The technical admin</div>
+            <div class="im-title">Owner</div>
+            <div class="im-sub">Developer / IT Pro · technical accountability<br/>Setup, configuration, credential management<br/>Can disable / delete agents</div>
+          </div>
+          <div class="im-node im-sponsor" data-concept-jump="agent-owner-sponsor" tabindex="0">
+            <div class="im-eyebrow">Mandatory · The business owner</div>
+            <div class="im-title">Human Sponsor</div>
+            <div class="im-sub">PM / Team Lead · business accountability<br/>EU AI Act Article 14 oversight contact<br/>Auto-succession on exit via Lifecycle Workflows</div>
+          </div>
+        </div>
+      </div>
+      <div class="visual-block-caption">The Entra-native identity model — same shape as App Registration → Service Principal, with an agent-specific second layer (the deployed Agent Identity SP) and an optional user-presence facet on top. Click any node to jump to its concept card.</div>
+    </div>
+  </details>
+
+  <details class="visual-block">
+    <summary>Same model in plain English: the school analogy</summary>
+    <div class="visual-block-body" style="font-size:14px; line-height:1.7;">
+      <p><strong>Think of it like a school robotics programme.</strong></p>
+      <ul>
+        <li>The <strong>Blueprint</strong> is the textbook — a template anyone can use to learn how to build a particular kind of robot.</li>
+        <li>When the school buys the textbook (<em>blueprint added to tenant</em>), it ends up in <em>your school</em> as the <strong>Blueprint Principal</strong> — your school's copy, holding your school's credentials, and able to build robots for your students.</li>
+        <li>Each robot the Blueprint Principal builds is an <strong>Agent Identity</strong>. Same template, individual robot. Has a name badge, no PIN code (it authenticates via secure tokens rather than a password it could leak on the playground).</li>
+        <li>Some robots get an extra <strong>Agent User</strong> facet — a school mailbox, a OneDrive locker, and a row in the class register. Robots that need to email teachers as themselves.</li>
+        <li>Every robot has a <strong>Human Sponsor</strong> — a teacher accountable for what the robot does. If the teacher leaves the school, Lifecycle Workflows reassign the robot (or retire it) automatically.</li>
+      </ul>
+      <p style="color:var(--color-text-muted); font-size:13px;">The technical pattern matches multi-tenant App Registration → Service Principal — if your team already understands that pattern, they understand 80% of A365 identity. Lead with the analogy when explaining to architects new to A365.</p>
+    </div>
+  </details>
+</section>
+
+<!-- §2.5 WHERE AGENTS COME FROM -->
+<section id="creation-paths">
+  <div class="section-eyebrow">Section 2.5</div>
+  <h2>Where agents come from</h2>
+  <p>Five creation paths converge into A365. Microsoft-platform agents (Copilot Studio, Agent Builder, Foundry, A365 SDK) <strong>auto-register</strong>. External-platform agents (SAP, ServiceNow, Slack) <strong>manual-register</strong> via Graph API. Anything else is a <strong>shadow agent</strong> — invisible to A365's identity, governance, and security planes.</p>
+
+  <div class="mermaid-host" style="margin-top:16px;">
+<div class="mermaid">
+flowchart LR
+    classDef auto fill:#deecf9,stroke:#0078d4,color:#000
+    classDef manual fill:#fff4d6,stroke:#a07a00,color:#000
+    classDef shadow fill:#fde7e9,stroke:#a4262c,color:#000
+    classDef target fill:#e1f5d1,stroke:#3a7d1c,color:#000
+
+    subgraph auto_group["Microsoft platforms (auto-register)"]
+        cs["Copilot Studio<br/>low-code"]:::auto
+        ab["M365 Agent Builder<br/>declarative"]:::auto
+        af["Azure AI Foundry<br/>pro-code"]:::auto
+        sdk["A365 SDK<br/>any cloud"]:::auto
+    end
+
+    subgraph manual_group["External (manual-register)"]
+        ext["SAP / ServiceNow / Slack<br/>+ others"]:::manual
+    end
+
+    subgraph shadow_group["Shadow agents"]
+        shadow["Custom scripts / unmanaged bots<br/>no identity, no audit"]:::shadow
+    end
+
+    a365["Agent 365<br/>Identity · Governance · Security"]:::target
+
+    cs --> a365
+    ab --> a365
+    af --> a365
+    sdk --> a365
+    ext -->|Graph API<br/>manual registration| a365
+    shadow -.->|invisible to A365<br/>governance gap| a365
+</div>
+  </div>
+  <p style="color:var(--color-text-muted); font-size:12px; margin-top:8px; text-align:center;">Reproduced from <em>Agent 365 conc.pptx</em> slide 2. The deck claims "60%+ of enterprise agents will be built outside Copilot Studio" — directional, not formally cited.</p>
+
+  <details class="visual-block" style="margin-top:24px;">
+    <summary>External agents (manual-register) — what it actually takes to register + get observability</summary>
+    <div class="visual-block-body">
+      <p>External-platform agents (SAP Joule, ServiceNow Now Assist, Slack workflow bots, AWS Bedrock agents, etc.) don't auto-register. There's a deliberate per-agent registration flow via Microsoft Graph plus an observability-instrumentation contract that the platform owner has to implement. Two paths exist:</p>
+
+      <h4 style="margin-top:8px;">Path 1 — Registry-only (metadata-only visibility)</h4>
+      <p style="font-size:13px;">Cheapest path. The agent appears in the M365 Admin Centre Agents inventory, has owner + sponsor metadata, sits in a collection, and is visible in the Agent Map — but no token-level Conditional Access enforcement, no DLP on the agent's interactions, no Defender runtime inspection. Useful for inventory + sponsor accountability, not for governance enforcement.</p>
+
+      <h4 style="margin-top:16px;">Path 2 — Full identity integration (CA + DLP + Defender)</h4>
+      <p style="font-size:13px;">Full path. The external agent gets an Entra App Registration + Service Principal, joins the Agent Identity space, and is subject to every governance primitive: Conditional Access targeting, sensitivity labels, DLP, Defender for Cloud Apps runtime inspection, Sentinel correlation, observability pipeline.</p>
+
+      <h4 style="margin-top:16px;">Registration mechanism — what gets done by whom</h4>
+      <div class="role-checklist">
+        <div class="role-card">
+          <h4>External platform owner (e.g. SAP / ServiceNow team)</h4>
+          <ol>
+            <li>Create or designate an <strong>Entra App Registration</strong> for the agent in the customer's tenant (or use a multi-tenant app of theirs that the customer admin-consents into).</li>
+            <li>Set the App Registration's OData type to <code>agent</code> via Graph PATCH on <code>/applications/{id}</code>.</li>
+            <li>Provide an <strong>Agent Card Manifest</strong> describing the agent's skills, capabilities, and discovery info — registered via <code>POST /agents</code> on Microsoft Graph.</li>
+            <li>If observability is required (Path 2): instrument the agent code with the <strong>A365 Observability SDK</strong> (Python, .NET, JS available) <em>or</em> implement the structured-scope OTel contract directly (InvokeAgentScope / InferenceScope / OutputScope / ExecuteToolScope) and POST spans to <code>agent365.svc.cloud.microsoft/observability/...</code>.</li>
+            <li>Acquire <code>Agent365.Observability.OtelWrite</code> tokens via <code>client_credentials</code> (S2S) using the agent's own clientId/secret, or via OBO if the agent is invoked with a calling-user JWT.</li>
+          </ol>
+        </div>
+        <div class="role-card">
+          <h4>A365 admin (customer tenant)</h4>
+          <ol>
+            <li>Admin-consent the external platform's app permissions (the OData-type-agent app needs tenant-wide consent to call Graph + the Observability API).</li>
+            <li>Register the agent's metadata in the Agent Registry via <code>POST /agents</code> (or via M365 Admin Centre → Agents → "Register external agent" if the UI is available).</li>
+            <li>Assign <strong>Owner</strong> (technical contact at the customer or at the platform vendor) and <strong>Sponsor</strong> (business-accountable person on the customer side).</li>
+            <li>Place the agent in a <strong>Collection</strong> — typically Quarantine first, promote to a Custom or Global collection after vetting.</li>
+            <li>Configure Conditional Access policies targeting the agent's SP (require MFA on inbound, block from risky locations, etc.).</li>
+            <li>Configure Purview DLP + sensitivity labels to apply to the agent's interactions.</li>
+          </ol>
+        </div>
+        <div class="role-card">
+          <h4>Security team</h4>
+          <ol>
+            <li>Review the app permissions requested — flag over-broad scopes for negotiation.</li>
+            <li>Add the agent's SP to ID Protection monitoring (anomalous sign-in alerts).</li>
+            <li>Author Sentinel detection rules on <code>CloudAppEvents</code> filtered to the agent's SP.</li>
+            <li>If sensitive data is in scope: run Security Exposure Management against the agent to map blast radius before promoting out of Quarantine.</li>
+          </ol>
+        </div>
+        <div class="role-card">
+          <h4>Sponsor (business)</h4>
+          <ol>
+            <li>Acknowledge accountability for the agent's actions in the directory record.</li>
+            <li>Sign off on the use case, data scope, and user audience.</li>
+            <li>Nominate a successor for Lifecycle Workflows auto-succession on departure.</li>
+          </ol>
+        </div>
+      </div>
+
+      <h4 style="margin-top:16px;">Observability — concretely, what the external agent's code has to do</h4>
+      <p style="font-size:13px;">For Path 2, the agent code must:</p>
+      <ol style="font-size:13px;">
+        <li>On every turn, wrap the agent's processing in an <code>InvokeAgentScope</code> (outer scope, holds tenant_id + agent_id + user_id baggage).</li>
+        <li>Wrap each LLM call in an <code>InferenceScope</code> nested inside InvokeAgentScope.</li>
+        <li>Wrap each tool / function / MCP call in an <code>ExecuteToolScope</code>.</li>
+        <li>Wrap the response emission in an <code>OutputScope</code>.</li>
+        <li>Configure the OTel exporter to POST to <code>https://agent365.svc.cloud.microsoft/observability/tenants/{tenant_id}/otlp/agents/{agent_id}/traces</code> with a bearer token scoped to <code>api://9b975845-388f-4429-889e-eab1ef63949c/Agent365.Observability.OtelWrite</code>.</li>
+        <li>Set <code>gen_ai.operation.name</code> on every span to one of <code>{chat, invoke_agent, execute_tool, output_messages}</code> — the A365 ingest endpoint rejects anything else.</li>
+      </ol>
+      <p style="font-size:13px;">The A365 SDK (Python / .NET / JS) does all of this automatically if you use it. If your platform isn't supported by the SDK, you implement the OTel contract directly — the wire format is plain OTLP HTTP with a Bearer token.</p>
+
+      <p style="color:var(--color-text-muted); font-size:12px; margin-top:16px;"><strong>Sources.</strong> Microsoft Graph <code>/agents</code> endpoint + <code>OData type agent</code> are public-but-evolving APIs; verify against <a href="https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/publish-agents-to-registry" target="_blank">Register agents to the registry</a> for the current Graph schema. The observability endpoint URL + structured-scope contract come from this project's <code>LESSONS_LEARNED.md</code> §12-§16. The 2-path framing comes from the deep-dive deck.</p>
+    </div>
+  </details>
+</section>
+
+<!-- §3 DECISION TREE -->
+<section id="decision-tree">
+  <div class="section-eyebrow">Section 3 · Interactive</div>
+  <h2>Pick the right class for your agent</h2>
+  <p>Five-question walkthrough that lands you on a recommended class. Answers feed a small state machine; click the recommendation to see the class card in detail.</p>
+  <div class="decision-tree-card" id="decision-tree-host">
+    <!-- rendered by JS -->
+  </div>
+</section>
+
+<!-- §4 CLASS CARDS -->
+<section id="classes">
+  <div class="section-eyebrow">Section 4</div>
+  <h2>The six registration classes</h2>
+  <p>Click a card to expand. Each class shows its CLI flags, GA status, what it gets you, prereqs (auth roles), and a button to jump to the matching token-flow animation in §7.</p>
+  <div class="class-grid" id="class-grid">
+    <!-- rendered by JS -->
+  </div>
+</section>
+
+<!-- §5 CONCEPT BROWSER -->
+<section id="concepts">
+  <div class="section-eyebrow">Section 5 · 85 concepts</div>
+  <h2>Concept browser</h2>
+  <p>Every concept that surfaces when working with A365. Grouped into six families; click any card to expand its definition and see cross-references. The global search bar at the top of the page filters this section in real time across all families.</p>
+  <div class="pivot-tabs" id="concept-tabs">
+    <!-- rendered by JS -->
+  </div>
+  <div id="concept-bodies">
+    <!-- rendered by JS, one .concept-grid per family -->
+  </div>
+</section>
+
+<!-- §6 COMPARATOR -->
+<section id="comparator">
+  <div class="section-eyebrow">Section 6 · Comparator</div>
+  <h2>OBO vs S2S — side-by-side</h2>
+  <p>Same agent, different auth mode. Toggle below; rows recompute. "Show both" splits into two columns for direct A/B reading.</p>
+  <div class="comparator-toggle" id="comparator-toggle">
+    <button data-mode="obo" class="active">OBO</button>
+    <button data-mode="s2s">S2S</button>
+    <button data-mode="both">Show both</button>
+  </div>
+  <div class="comparator-rows" id="comparator-rows">
+    <!-- rendered by JS -->
+  </div>
+</section>
+
+<!-- §7 ANIMATION -->
+<section id="animation">
+  <div class="section-eyebrow">Section 7 · Animated</div>
+  <h2>Token flow — step through a turn</h2>
+  <p>Watch tokens hop between actors during a single agent invocation. Switch between OBO and S2S to see how the token graph changes. Play, pause, single-step, reset.</p>
+  <div class="animation-tabs">
+    <button class="active" data-mode="obo">OBO flow</button>
+    <button data-mode="s2s">S2S flow</button>
+  </div>
+  <div class="animation-stage">
+    <svg class="animation-svg" viewBox="0 0 1100 380" id="animation-svg" xmlns="http://www.w3.org/2000/svg">
+      <!-- rendered by JS -->
+    </svg>
+  </div>
+  <div class="animation-controls">
+    <button class="button primary" id="anim-play">Play</button>
+    <button class="button" id="anim-pause">Pause</button>
+    <button class="button" id="anim-step">Step ▸</button>
+    <button class="button" id="anim-reset">Reset</button>
+    <span style="flex:1"></span>
+    <span style="color:var(--color-text-muted); font-size:12px;" id="anim-mode-label">Mode: OBO</span>
+  </div>
+  <div class="animation-step-info">
+    <div class="animation-step-counter" id="anim-step-counter">Step 0 of 0 — paused</div>
+    <div class="animation-step-desc" id="anim-step-desc">Click <strong>Play</strong> to start the animation.</div>
+  </div>
+</section>
+
+<!-- §8 REFERENCE TABLES -->
+<section id="reference">
+  <div class="section-eyebrow">Section 8</div>
+  <h2>Reference tables</h2>
+  <p>Quick-lookup tables for admin-centre fields, every scope in the stack, every env var, every CLI command. All collapsible.</p>
+
+  <details class="reference-block" open>
+    <summary>Admin-centre fields (what is and isn't client-settable)</summary>
+    <div class="reference-block-body">
+      <table>
+        <thead><tr><th>Field</th><th>Client-settable?</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Display name</td><td>Yes (via manifest)</td><td>From <code>manifest.json</code> <code>name.short</code>.</td></tr>
+          <tr><td>Description</td><td>Yes (via manifest)</td><td><code>a365 publish</code> overwrites the description with a generic placeholder — re-edit before re-zipping.</td></tr>
+          <tr><td>Icon / accent colour</td><td>Yes (via manifest)</td><td>Bundled in the manifest zip alongside color.png + outline.png.</td></tr>
+          <tr><td>Activated for</td><td>Yes (admin centre only)</td><td>Per-user / per-group / All users. No CLI equivalent.</td></tr>
+          <tr><td>Class label (AI teammate / Standard)</td><td>Indirectly (via <code>--aiteammate</code> flag at creation)</td><td>Cannot be changed after blueprint creation — only by full re-registration.</td></tr>
+          <tr><td>Platform column</td><td>No — server-stamped</td><td>Enumerates {Copilot Studio, Foundry, ...}. SDK-only agents leave it empty. See LESSONS_LEARNED §23.</td></tr>
+          <tr><td>Permissions count / scope list</td><td>Indirectly (via <code>setup permissions</code>)</td><td>Display only; managed by the CLI grants.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="reference-block">
+    <summary>Scope catalogue</summary>
+    <div class="reference-block-body">
+      <table>
+        <thead><tr><th>Scope</th><th>Resource</th><th>Mode</th><th>Admin consent?</th></tr></thead>
+        <tbody>
+          <tr><td><code>Mail.ReadWrite</code></td><td>Microsoft Graph</td><td>OBO (delegated) / S2S (app)</td><td>S2S only</td></tr>
+          <tr><td><code>Chat.ReadWrite</code></td><td>Microsoft Graph</td><td>OBO / S2S</td><td>S2S only</td></tr>
+          <tr><td><code>ChannelMessage.Read.All</code></td><td>Microsoft Graph</td><td>OBO / S2S</td><td>Yes</td></tr>
+          <tr><td><code>User.Read</code></td><td>Microsoft Graph</td><td>OBO</td><td>No</td></tr>
+          <tr><td><code>Sites.Read.All</code></td><td>Microsoft Graph</td><td>OBO / S2S</td><td>Yes</td></tr>
+          <tr><td><code>McpServersMetadata.Read.All</code></td><td>Agent 365 Tools</td><td>OBO / S2S</td><td>Yes</td></tr>
+          <tr><td><code>Authorization.user_impersonation</code></td><td>Messaging Bot API</td><td>OBO</td><td>No</td></tr>
+          <tr><td><code>Agent365.Observability.OtelWrite</code></td><td>Observability API (<code>9b975845-388f-4429-889e-eab1ef63949c</code>)</td><td>OBO / S2S</td><td>S2S only (and OBO consents per-user)</td></tr>
+          <tr><td><code>Connectivity.user_impersonation</code></td><td>Power Platform API</td><td>OBO</td><td>No</td></tr>
+          <tr><td><code>CopilotStudio.Copilots.Invoke</code></td><td>Power Platform</td><td>OBO</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="reference-block">
+    <summary>Environment variables the agent service reads</summary>
+    <div class="reference-block-body">
+      <table>
+        <thead><tr><th>Var</th><th>Source</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>CLIENT_ID</code></td><td>Stamped by CLI</td><td>Blueprint app's clientId.</td></tr>
+          <tr><td><code>CLIENT_SECRET</code></td><td>Stamped by CLI</td><td>Blueprint client secret; rotated each <code>setup blueprint</code>.</td></tr>
+          <tr><td><code>TENANT_ID</code></td><td>Stamped by CLI</td><td>Tenant GUID.</td></tr>
+          <tr><td><code>CONNECTIONS__SERVICE_CONNECTION__SETTINGS__*</code></td><td>Stamped by CLI</td><td>Bot Framework connection settings (parallel set; same values as above).</td></tr>
+          <tr><td><code>AUTH_HANDLER_NAME</code></td><td>Manual after Phase 2F</td><td>Set to <code>AGENTIC</code> to enable the OBO token exchange path; empty for S2S.</td></tr>
+          <tr><td><code>AGENT365OBSERVABILITY__AGENTID</code></td><td>Stamped by CLI</td><td>Blueprint ID (used as agent_id in span attributes).</td></tr>
+          <tr><td><code>AGENT365OBSERVABILITY__AGENTBLUEPRINTID</code></td><td>Stamped by CLI</td><td>Blueprint ID (used in spans).</td></tr>
+          <tr><td><code>AGENT365OBSERVABILITY__TENANTID</code></td><td>Stamped by CLI</td><td>Tenant GUID for spans.</td></tr>
+          <tr><td><code>ENABLE_A365_OBSERVABILITY</code></td><td><strong>Manual</strong></td><td>Gates whether structured scopes are created. Without it, the SDK no-ops.</td></tr>
+          <tr><td><code>ENABLE_A365_OBSERVABILITY_EXPORTER</code></td><td><strong>Manual</strong></td><td>Gates whether the A365 exporter is installed. Without it, Console exporter only.</td></tr>
+          <tr><td><code>OBSERVABILITY_DEBUG</code></td><td>Manual</td><td>Lowers root logger to DEBUG; pretty-prints spans + decodes JWTs.</td></tr>
+          <tr><td><code>AGENT_AUTH_MODE</code></td><td>Manual (for S2S walkthrough)</td><td>Selects token resolver in <code>observability.py</code> — <code>obo</code> (default) or <code>s2s</code>.</td></tr>
+          <tr><td><code>AZURE_OPENAI_BASE_URL</code></td><td>Manual</td><td>Foundry project URL; must end in <code>/openai/v1/</code>.</td></tr>
+          <tr><td><code>AZURE_OPENAI_DEPLOYMENT</code></td><td>Manual</td><td>Foundry deployment name (e.g. <code>gpt-5.4-nano</code>).</td></tr>
+          <tr><td><code>AZURE_OPENAI_API_VERSION</code></td><td>Manual</td><td>Must be <code>preview</code> for the Responses API.</td></tr>
+          <tr><td><code>PORT</code></td><td>Manual</td><td>Agent service port. <code>3978</code> live, <code>3979</code> for v2.</td></tr>
+          <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>Manual (optional)</td><td>Local Aspire Dashboard / OTel collector URL for span mirroring.</td></tr>
+          <tr><td><code>APPLICATIONINSIGHTS_CONNECTION_STRING</code></td><td>Manual (optional)</td><td>App Insights connection string.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="reference-block">
+    <summary>Security stack — seven products around A365</summary>
+    <div class="reference-block-body">
+      <p>A365 is the agent backbone; seven existing M365 / Entra security products provide the muscle. Most of these you already pay for as part of M365 E5 — the gap is usually <em>product configured for agents</em>, not <em>product purchased</em>.</p>
+      <div class="mermaid-host" style="margin:16px 0;">
+<div class="mermaid">
+flowchart TB
+    classDef ia fill:#deecf9,stroke:#0078d4,color:#000
+    classDef tp fill:#fff4d6,stroke:#a07a00,color:#000
+    classDef dc fill:#f4e8ff,stroke:#5c2d91,color:#000
+    classDef agg fill:#fde7e9,stroke:#a4262c,color:#000
+    classDef core fill:#e1f5d1,stroke:#3a7d1c,color:#000
+
+    a365["Agent 365<br/>Management &amp; Control Plane<br/>Identity · Registry · Admin Center · Agent Map"]:::core
+
+    subgraph ia_group["Identity &amp; Access"]
+        ca["Conditional Access<br/>policy enforcement"]:::ia
+        idp["ID Protection<br/>risk detection"]:::ia
+        idg["ID Governance<br/>lifecycle &amp; access reviews"]:::ia
+    end
+
+    subgraph tp_group["Threat Protection"]
+        dca["Defender for Cloud Apps<br/>agent inventory &amp; runtime"]:::tp
+        dfc["Defender for Cloud<br/>posture for Foundry agents"]:::tp
+        sem["Security Exposure Mgmt<br/>attack paths &amp; blast radius"]:::tp
+        gsa["Global Secure Access<br/>SASE · AI Prompt Shield"]:::tp
+    end
+
+    subgraph dc_group["Data &amp; Compliance"]
+        pur["Purview<br/>DLP · labels · insider risk · audit"]:::dc
+    end
+
+    subgraph agg_group["Aggregation"]
+        sen["Sentinel<br/>SIEM · hunting · correlation"]:::agg
+    end
+
+    ia_group --- a365
+    tp_group --- a365
+    dc_group --- a365
+    agg_group --- a365
+</div>
+      </div>
+      <table>
+        <thead><tr><th>Product</th><th>Agent-specific configuration work</th></tr></thead>
+        <tbody>
+          <tr><td>Conditional Access</td><td>Author policies that target agent service principals as principals (not just users). Block / require MFA / require compliant device for agent invocations.</td></tr>
+          <tr><td>ID Protection</td><td>Enable risk detection on agent identities — anomalous sign-ins, token misuse, impossible travel.</td></tr>
+          <tr><td>ID Governance</td><td>Access reviews on agent SPs; entitlement packages that include agent access; Lifecycle Workflows on agent creation / sponsor change / decommission.</td></tr>
+          <tr><td>Defender for Cloud Apps</td><td>Detect shadow agents via network signatures; inspect tool invocations at runtime; auto-quarantine.</td></tr>
+          <tr><td>Defender for Cloud</td><td>Posture management for Foundry-hosted agents (configuration drift, exposed endpoints, missing credentials rotation).</td></tr>
+          <tr><td>Security Exposure Mgmt</td><td>Attack-path graph; blast-radius modelling from a compromised agent back to critical data assets.</td></tr>
+          <tr><td>Global Secure Access</td><td>SASE network layer; AI Prompt Shield catches injection attacks before they reach agent code.</td></tr>
+          <tr><td>Purview</td><td>DLP policies targeting agent instances; sensitivity labels on agent interactions; insider-risk template for agents; eDiscovery + retention.</td></tr>
+          <tr><td>Sentinel</td><td>Ingest A365 audit + Defender CloudAppEvents; KQL hunts on agent behaviour; Sentinel Graph for blast-radius visualisation.</td></tr>
+        </tbody>
+      </table>
+      <p style="color:var(--color-text-muted); font-size:12px; margin-top:12px;">Reproduced from <em>Agent 365 conc.pptx</em> slide 3.</p>
+    </div>
+  </details>
+
+  <details class="reference-block">
+    <summary>CLI quick reference (a365 1.1.176+)</summary>
+    <div class="reference-block-body">
+      <table>
+        <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>a365 --version</code></td><td>Print CLI version.</td></tr>
+          <tr><td><code>a365 setup requirements</code></td><td>Validate prerequisites.</td></tr>
+          <tr><td><code>a365 setup blueprint</code></td><td>Create blueprint (Entra app + SP + endpoint).</td></tr>
+          <tr><td><code>a365 setup blueprint --update-endpoint &lt;url&gt;</code></td><td>Rebind endpoint without recreating blueprint. Requires <code>--m365</code>.</td></tr>
+          <tr><td><code>a365 setup blueprint --no-endpoint</code></td><td>Create blueprint without endpoint registration.</td></tr>
+          <tr><td><code>a365 setup blueprint --show-secret</code></td><td>Print stored client secret (no setup performed).</td></tr>
+          <tr><td><code>a365 setup permissions mcp</code></td><td>Grant MCP resource consents.</td></tr>
+          <tr><td><code>a365 setup permissions bot</code></td><td>Grant Bot Framework messaging consents.</td></tr>
+          <tr><td><code>a365 setup permissions custom</code></td><td>Grant custom-resource consents.</td></tr>
+          <tr><td><code>a365 setup permissions copilotstudio</code></td><td>Grant Power Platform CopilotStudio.Copilots.Invoke.</td></tr>
+          <tr><td><code>a365 setup all --m365</code></td><td>Blueprint + permissions in sequence. Class-aware via <code>--aiteammate</code> / <code>--authmode</code>.</td></tr>
+          <tr><td><code>a365 publish</code></td><td>Generate <code>manifest/manifest.zip</code>. Overwrites description.</td></tr>
+          <tr><td><code>a365 query-entra blueprint-scopes</code></td><td>List blueprint scopes + consent status.</td></tr>
+          <tr><td><code>a365 query-entra instance-scopes</code></td><td>List instance scopes + consent status.</td></tr>
+          <tr><td><code>a365 cleanup blueprint</code></td><td>Remove Entra app + SP + endpoint + metadata.</td></tr>
+          <tr><td><code>a365 cleanup azure</code></td><td>Remove App Service + Plan.</td></tr>
+          <tr><td><code>a365 cleanup instance</code></td><td>Remove agentic-user identities.</td></tr>
+          <tr><td><code>a365 develop list-available</code></td><td>List MCP servers in the catalogue.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<!-- §9 FOOTER -->
+<footer id="footer">
+  <h4>See also</h4>
+  <ul>
+    <li><strong>Local docs (sibling files):</strong>
+      <a href="AGENT-CLASS-MIGRATION.md">AGENT-CLASS-MIGRATION.md</a> ·
+      <a href="RE-REGISTRATION.md">RE-REGISTRATION.md</a> ·
+      <a href="DUPLICATE-REGISTRATION.md">DUPLICATE-REGISTRATION.md</a></li>
+    <li><strong>Repo root:</strong>
+      <a href="../SETUP.md">SETUP.md</a> ·
+      <a href="../LESSONS_LEARNED.md">LESSONS_LEARNED.md</a></li>
+    <li><strong>Outside repo (authoritative classes reference):</strong>
+      <code>~/Downloads/agent365-registration-classes.md</code></li>
+  </ul>
+
+  <h4>Microsoft Learn</h4>
+  <ul>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/overview">Agent 365 overview</a></li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/get-started">Get started (developer)</a></li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity">Identity (OBO vs S2S)</a></li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/registration">Blueprint setup</a></li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli">CLI reference</a></li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/setup">CLI <code>setup</code></a></li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-registry?view=o365-worldwide">Agent registry (admin centre)</a></li>
+    <li><a href="https://learn.microsoft.com/en-us/entra/agent-id/agent-blueprint">Entra Agent ID blueprints</a></li>
+    <li><a href="https://www.microsoft.com/en-us/security/blog/2026/05/01/microsoft-agent-365-now-generally-available-expands-capabilities-and-integrations/">GA announcement (1 May 2026)</a></li>
+  </ul>
+
+  <p style="margin-top:24px;">Built locally as part of the Draft Dodger project's <code>Local docs/</code> set. Never pushed to remote — this file is gitignored. Update by editing <code>a365-concepts.html</code> directly; concept data lives in the <code>concepts</code> JS array near the top of the <code>&lt;script&gt;</code> block.</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+/* ============================================================
+   DATA — 85 concepts, 6 classes, decision tree, animations
+   ============================================================ */
+
+const FAMILIES = [
+  { id: "identity", label: "Identity & principals" },
+  { id: "auth", label: "Auth" },
+  { id: "surface", label: "Surface / registration" },
+  { id: "observability", label: "Observability" },
+  { id: "plumbing", label: "Plumbing / runtime" },
+  { id: "lifecycle", label: "Lifecycle / process" },
+];
+
+const concepts = [
+  // ===== Identity & principals (11) =====
+  { id: "blueprint", family: "identity", name: "Blueprint (Agent Identity Blueprint)",
+    oneLine: "The multi-tenant template — an Entra App Registration of <code>agent</code> OData type — defining permissions, roles, and identity patterns.",
+    definition: "A blueprint is the <strong>template</strong> for an agent class. Technically it's an Entra <strong>App Registration</strong> with OData discriminator <code>agent</code> (the Graph-level marker that distinguishes A365 blueprint apps from regular line-of-business apps). One blueprint per agent type; multi-tenant by design. When the blueprint enters your tenant, a <strong>Blueprint Principal</strong> (the SP) is created — that's your tenant's instance, holding tenant-specific credentials and creating per-deployed-instance Agent Identities. Class flags (<code>--aiteammate</code>, <code>--authmode</code>) are baked into blueprint metadata and are immutable for the blueprint's lifetime — switching class requires destroy and recreate.",
+    references: ["agent365-registration-classes.md §1", "Agent 365 conc.pptx slide 1"],
+    related: ["blueprint-principal", "blueprint-id", "agent-odata-type", "service-principal", "agentic-user-identity", "mcp-platform-endpoint"] },
+  { id: "blueprint-id", family: "identity", name: "Blueprint ID",
+    oneLine: "Server-generated GUID that identifies a blueprint; immutable, used in audit logs.",
+    definition: "A GUID assigned by the A365 service when the blueprint is created. Used to key audit-log rows, identify the blueprint to the M365 admin centre, and bind the Teams app manifest's <code>botId</code>. Once issued it cannot be changed; a new blueprint always has a new ID.",
+    references: ["LESSONS_LEARNED.md §20", "agent365-registration-classes.md §1"],
+    related: ["blueprint", "bot-msa-appid", "audit-log-row"] },
+  { id: "entra-application", family: "identity", name: "Entra application",
+    oneLine: "The Microsoft Entra app registration that represents the blueprint to Azure AD.",
+    definition: "Every blueprint backs onto an Entra app registration with a clientId, a client secret (rotated by the CLI each setup), and a set of API permissions. This is the object you'd see in Entra portal → App registrations. It's owned by the tenant where the blueprint was created.",
+    references: ["LESSONS_LEARNED.md §6"],
+    related: ["service-principal", "blueprint", "client-secret"] },
+  { id: "service-principal", family: "identity", name: "Service principal (SP)",
+    oneLine: "The per-tenant instance of an Entra application; what gets permissions and tokens.",
+    definition: "An Entra app registration is a global template; its <em>service principal</em> is the tenant-scoped representation that holds permission grants and is issued tokens. In A365 there are <strong>two SPs in play</strong> per agent class: (1) the <a href='#c-blueprint-principal'>Blueprint Principal</a> — the SP of the blueprint App Registration, the tenant's 'copy' of the blueprint; and (2) the <a href='#c-agent-identity'>Agent Identity</a> — the SP of subtype <code>agent</code>, single-tenant, one per deployed agent instance, created by the Blueprint Principal. For blueprint-only agents the Agent Identity is the only identity; AI Teammate agents add an Agent User on top.",
+    references: ["agent365-registration-classes.md §1", "Agent 365 conc.pptx slide 1"],
+    related: ["entra-application", "blueprint-principal", "agent-identity", "agentic-user-identity", "app-permission", "oauth2-permission-grant"] },
+  { id: "agentic-user-identity", family: "identity", name: "Agentic user identity",
+    oneLine: "An Entra user account (1:1 with Agent Identity) — UPN, mailbox, OneDrive, Teams presence. Crucially, <strong>no password</strong> — authenticates via federated credentials.",
+    definition: "When you set <code>--aiteammate true</code>, A365 provisions an Entra <strong>user</strong> object (in addition to the SP) for the agent. It gets a UPN, a mailbox, a OneDrive, calendar, Teams presence. The agent appears in M365 Copilot Agents tab as a 'hireable' team member. <strong>No password is stored on the user object</strong> — the user authenticates via a <a href='#c-federated-credential'>federated credential</a> tied to the Agent Identity SP. This is what makes 'login as the agent' impossible and 'spoof the agent' difficult: there's no shared secret a human can phish. Requires M365 licensing for the user account.",
+    references: ["agent365-registration-classes.md §1", "Agent 365 conc.pptx slide 1"],
+    related: ["agentic-user-template", "ai-teammate", "agent-identity", "federated-credential", "agentic-app-id"] },
+  { id: "agentic-user-template", family: "identity", name: "Agentic user template",
+    oneLine: "JSON specification (in the manifest) that defines the agentic user's display name, email, avatar.",
+    definition: "A manifest fragment named <code>agenticUserTemplateManifest.json</code>, shipped inside <code>manifest.zip</code>, that templates per-user agentic-user provisioning for AI Teammate agents. Each invoking user gets their own agentic-user instance derived from this template — distinct mailbox-of-the-agent-for-that-user, etc.",
+    references: ["LESSONS_LEARNED.md §5.2"],
+    related: ["agentic-user-identity", "manifest-zip", "instance-id"] },
+  { id: "agent-identity", family: "identity", name: "Agent identity",
+    oneLine: "The per-deployed-instance Service Principal of subtype <code>agent</code> — single-tenant, no stored credentials, auth via access tokens.",
+    definition: "Specifically a Service Principal of <strong>subtype <code>agent</code></strong>, <strong>single-tenant</strong> in the deploying tenant, with <strong>no credentials stored</strong> on the principal itself — auth happens via access tokens issued to whichever platform is running the agent (e.g. the agent service process or the calling agent in an A2A handoff). Created by the Blueprint Principal at deployment time; one Agent Identity per deployed agent instance. For blueprint-only agents this is the runtime identity. For AI Teammate agents it's paired 1:1 with an Agent User. Visible in CLI output as <code>agentIdentityDisplayName</code>; what audit attribution shows for S2S calls.",
+    references: ["agent365-registration-classes.md §1", "LESSONS_LEARNED.md §17", "Agent 365 conc.pptx slide 1"],
+    related: ["service-principal", "blueprint-principal", "sp-subtype-agent", "agentic-user-identity", "agentic-app-id"] },
+  { id: "msa-app", family: "identity", name: "MSA app",
+    oneLine: "Microsoft Service Account application used for non-M365 agents (Teams Developer Portal flow).",
+    definition: "A Microsoft Service Account-registered app, distinct from a tenant-scoped Entra app, used as the bot identity for agents registered via Teams Developer Portal rather than MCP Platform. Relevant for AI Teammate (non-M365) class.",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["bot-msa-appid", "teams-developer-portal"] },
+  { id: "bot-msa-appid", family: "identity", name: "Bot MSA appId",
+    oneLine: "The MSA appId used by the Teams app manifest to bind it to a specific bot/blueprint.",
+    definition: "The application ID stamped into the Teams app manifest's <code>botId</code> field. The manifest installation is keyed to this appId; if it changes, existing installs go stale and users have to re-install. Visible in <code>a365.generated.config.json</code>.",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["msa-app", "manifest-zip", "blueprint-id"] },
+  { id: "instance-id", family: "identity", name: "Instance ID",
+    oneLine: "Per-user agentic-user identity GUID, allocated when a user first engages with an AI Teammate blueprint.",
+    definition: "For multi-instance AI Teammate deployments, each invoking user gets their own agentic-user instance with a distinct GUID. This is what shows up in <code>recipient.agentic_app_id</code> on a Bot Framework turn, and what audit logs key on. Distinct from <code>blueprintId</code>.",
+    references: ["LESSONS_LEARNED.md §17", "LESSONS_LEARNED.md §24"],
+    related: ["agentic-app-id", "blueprint-id", "agentic-user-identity"] },
+  { id: "agentic-app-id", family: "identity", name: "agentic_app_id",
+    oneLine: "The runtime identity of the specific agentic-user instance for the current turn.",
+    definition: "Bot Framework context field — <code>context.activity.recipient.agentic_app_id</code> — that carries the per-turn agentic-user identity. For multi-instance scenarios this differs per user; for blueprint-only agents it falls back to the SP's appId. The agent service uses this when keying the observability token cache.",
+    references: ["LESSONS_LEARNED.md §17", "LESSONS_LEARNED.md §24"],
+    related: ["instance-id", "token-cache", "hardcoded-instance-fallback-bug"] },
+
+  // ===== Auth (10) =====
+  { id: "obo", family: "auth", name: "OBO (On-Behalf-Of)",
+    oneLine: "Auth pattern where the agent borrows the calling user's token to act as that user.",
+    definition: "The agent service receives an inbound JWT (e.g. from a Bot Framework activity), exchanges it for a downstream-scoped token via the OAuth2 On-Behalf-Of grant, and uses that token to call M365 services. The audit trail attributes every action to the original user. No admin consent required for OBO scopes — the user consents on first use.",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["delegated-grant", "s2s", "token-resolver", "admin-consent"] },
+  { id: "s2s", family: "auth", name: "S2S (server-to-server)",
+    oneLine: "Auth pattern where the agent authenticates as itself using app permissions.",
+    definition: "The agent uses its own clientId + clientSecret to acquire a token via the <code>client_credentials</code> grant. No user in the loop. Audit attribution is the agent itself. Every app permission scope requires tenant-wide admin consent. Right pattern for autonomous agents (Databricks jobs, schedulers, queue workers).",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["app-permission", "obo", "admin-consent", "app-role-assignment"] },
+  { id: "auth-mode-flag", family: "auth", name: "--authmode flag",
+    oneLine: "CLI flag on <code>a365 setup all</code> selecting <code>obo</code>, <code>s2s</code>, or <code>both</code>.",
+    definition: "Passed to <code>a365 setup all</code> (and <code>a365 publish</code>). Determines the kind of permission grants the CLI creates. Default is <code>obo</code> for blueprint-only agents. Not meaningful with <code>--aiteammate true</code>.",
+    references: ["agent365-registration-classes.md §4"],
+    related: ["obo", "s2s", "blueprint-only-both"] },
+  { id: "admin-consent", family: "auth", name: "Admin consent",
+    oneLine: "Tenant-wide consent grant from a Global Administrator; required for S2S and most non-OBO scopes.",
+    definition: "Some Entra app permissions can be consented by an individual user (delegated, OBO). Others require a Global Administrator to consent on behalf of the entire tenant. App permissions (S2S) always need this. The CLI prints an admin-consent URL when it detects the operator isn't Global Admin.",
+    references: ["agent365-registration-classes.md §4"],
+    related: ["s2s", "obo", "delegated-grant", "global-administrator-role"] },
+  { id: "delegated-grant", family: "auth", name: "Delegated grant",
+    oneLine: "User-scoped permission granted via OBO — recorded as an <code>oauth2PermissionGrant</code>.",
+    definition: "When a user consents to a scope, Entra records the grant as an <code>oauth2PermissionGrant</code> entity tying together the user, the client app, the resource, and the scope string. The agent's OBO calls then succeed against that resource for that user.",
+    references: ["LESSONS_LEARNED.md §13"],
+    related: ["oauth2-permission-grant", "obo", "leading-space-scope-bug"] },
+  { id: "app-permission", family: "auth", name: "App permission",
+    oneLine: "Tenant-wide permission held by the service principal itself — recorded as an <code>appRoleAssignment</code>.",
+    definition: "App permissions live on the service principal and are not scoped to any user. The agent acts as itself with these permissions. Requires admin consent to grant. Implemented in Entra as <code>appRoleAssignment</code> entities — different shape from the OBO <code>oauth2PermissionGrant</code>.",
+    references: ["LESSONS_LEARNED.md §6"],
+    related: ["s2s", "app-role-assignment", "admin-consent"] },
+  { id: "oauth2-permission-grant", family: "auth", name: "oauth2PermissionGrant",
+    oneLine: "The Microsoft Graph entity representing a delegated (OBO) scope grant.",
+    definition: "A Microsoft Graph entity at <code>/oauth2PermissionGrants/{id}</code> with fields <code>clientId</code>, <code>resourceId</code>, <code>principalId</code>, <code>scope</code> (space-delimited list). The CLI 1.1.174 has a defect where single-scope grants emit with a leading space in the <code>scope</code> field, causing runtime <code>AADSTS65001</code>.",
+    references: ["LESSONS_LEARNED.md §13"],
+    related: ["delegated-grant", "leading-space-scope-bug"] },
+  { id: "app-role-assignment", family: "auth", name: "appRoleAssignment",
+    oneLine: "The Microsoft Graph entity representing an S2S app-permission grant.",
+    definition: "A Microsoft Graph entity at <code>/servicePrincipals/{spId}/appRoleAssignments/{id}</code> with fields <code>appRoleId</code>, <code>principalId</code> (the SP receiving the role), <code>resourceId</code> (the API SP granting the role). The S2S equivalent of <code>oauth2PermissionGrant</code>. Has its own family of edge cases (mismatched <code>appRoleId</code>, consent-pending state).",
+    references: ["LESSONS_LEARNED.md §6"],
+    related: ["app-permission", "s2s"] },
+  { id: "token-resolver", family: "auth", name: "Token resolver",
+    oneLine: "Synchronous callable that supplies the bearer token for A365 observability export.",
+    definition: "A function passed to <code>Agent365ExporterOptions(token_resolver=...)</code> that the SDK calls per-export to get a fresh bearer token. <strong>MUST be synchronous</strong> — the SDK call site does <code>token = self._token_resolver(agent_id, tenant_id)</code> without <code>await</code>. Making it <code>async def</code> produces a coroutine that gets stringified into the Authorization header and exports fail with <code>EndpointInvalid</code>.",
+    references: ["LESSONS_LEARNED.md §12", "LESSONS_LEARNED.md §14 Bug 3"],
+    related: ["agent365-exporter", "obo", "s2s", "otelwrite-scope"] },
+  { id: "audience-mismatch", family: "auth", name: "Audience mismatch",
+    oneLine: "Acquiring a token for the wrong resource — most commonly <code>cognitiveservices</code> vs <code>ai.azure.com</code>.",
+    definition: "Tokens are scoped to a resource (the 'audience'). Foundry expects tokens with audience <code>https://ai.azure.com/.default</code>, not <code>https://cognitiveservices.azure.com/.default</code>. Using the wrong one returns 401 even when the user/SP has access to the right resource.",
+    references: ["LESSONS_LEARNED.md §1.1"],
+    related: ["foundry-audience", "obo"] },
+
+  // ===== Surface / registration (10) =====
+  { id: "m365-admin-centre-agents", family: "surface", name: "M365 Admin Centre Agents inventory",
+    oneLine: "The admin-centre surface at admin.microsoft.com → Agents that lists every registered A365 agent.",
+    definition: "<a href='https://admin.cloud.microsoft' target='_blank'>admin.cloud.microsoft</a> → Agents. Shows every blueprint registered in the tenant with columns for display name, class (AI teammate / Standard), Platform (server-stamped), Activated for, and the Activity tab. The only place to upload manifests and activate agents for users.",
+    references: ["agent365-registration-classes.md §3", "LESSONS_LEARNED.md §7"],
+    related: ["activated-for", "platform-column", "manifest-zip", "activity-tab"] },
+  { id: "mcp-platform-endpoint", family: "surface", name: "MCP Platform endpoint",
+    oneLine: "How A365 routes messages to the agent's <code>/api/messages</code> URL for M365-integrated agents.",
+    definition: "When you pass <code>--m365</code>, A365 registers the agent's messaging endpoint via the MCP (Multi-Cloud Platform) routing layer. This is what makes the agent reachable from M365 Copilot. Without <code>--m365</code>, you'd configure the endpoint via Teams Developer Portal instead.",
+    references: ["agent365-registration-classes.md §1"],
+    related: ["teams-developer-portal", "callback-uri", "m365-flag"] },
+  { id: "teams-developer-portal", family: "surface", name: "Teams Developer Portal",
+    oneLine: "<a href='https://dev.teams.microsoft.com' target='_blank'>dev.teams.microsoft.com</a> — alternative endpoint-registration path for non-M365 agents.",
+    definition: "Microsoft's web UI for managing Teams bot endpoints. For AI Teammate (non-M365) agents you register the messaging endpoint here instead of via MCP Platform. The agent then surfaces only in Teams channels, not in M365 Copilot.",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["mcp-platform-endpoint", "ai-teammate-non-m365"] },
+  { id: "manifest-zip", family: "surface", name: "manifest.zip",
+    oneLine: "The deployment package uploaded to admin centre; binds a blueprint to a user-installable Teams app.",
+    definition: "A ZIP file with <code>manifest.json</code>, <code>agenticUserTemplateManifest.json</code>, <code>color.png</code>, <code>outline.png</code>. Generated by <code>a365 publish</code>. <code>manifest.json</code> contains <code>botId</code> (bound to the blueprint's bot MSA appId), display name, description, accent colour. <code>a365 publish</code> overwrites the description — re-edit before re-zipping.",
+    references: ["LESSONS_LEARNED.md §5.2", "LESSONS_LEARNED.md §9.2"],
+    related: ["agentic-user-template", "bot-msa-appid", "a365-publish-overwrites-description"] },
+  { id: "agentic-user-template-manifest", family: "surface", name: "agenticUserTemplateManifest.json",
+    oneLine: "JSON file in manifest.zip defining per-user agentic-user instance properties.",
+    definition: "Template JSON shipped alongside <code>manifest.json</code> in <code>manifest.zip</code>. Defines the agentic-user's display name template, email template, avatar. The A365 service instantiates per-user agentic-users from this template when AI Teammate users first engage.",
+    references: ["LESSONS_LEARNED.md §5.2"],
+    related: ["agentic-user-identity", "agentic-user-template", "manifest-zip"] },
+  { id: "activated-for", family: "surface", name: "Activated for",
+    oneLine: "Admin-centre setting that determines which users can see and use the agent.",
+    definition: "Per-user, per-group, or 'All users'. Configured in admin centre → Agents → &lt;agent&gt; → Update. The agent doesn't appear in users' Copilot Agents tab until they're in the activated-for scope. No CLI equivalent — must be done in the web UI.",
+    references: ["LESSONS_LEARNED.md §7"],
+    related: ["m365-admin-centre-agents"] },
+  { id: "platform-column", family: "surface", name: "Platform column",
+    oneLine: "Server-stamped field in the Agents inventory showing the agent's origin (Copilot Studio, Foundry, ...). Not client-settable.",
+    definition: "An admin-centre column enumerating values like 'Copilot Studio', 'Foundry', 'SDK', etc. Stamped by the A365 service based on its own detection logic — there's no flag on the CLI to set it. Custom Python agents typically show this column empty.",
+    references: ["LESSONS_LEARNED.md §23"],
+    related: ["m365-admin-centre-agents"] },
+  { id: "ai-teammate", family: "surface", name: "AI Teammate (class family)",
+    oneLine: "Class family where the agent has its own Entra agentic user; opposed to Blueprint-only.",
+    definition: "One of two top-level identity-axis families. AI Teammate = own Entra agentic user (mailbox, Teams presence, calendar). Blueprint-only = SP only, no Entra user. Selected via <code>--aiteammate true</code> at blueprint creation. Still <strong>Frontier preview</strong> as of May 2026.",
+    references: ["agent365-registration-classes.md §1", "agent365-registration-classes.md §2"],
+    related: ["blueprint-only", "agentic-user-identity"] },
+  { id: "blueprint-only", family: "surface", name: "Blueprint-only (class family)",
+    oneLine: "Class family where the agent has only a service principal; opposed to AI Teammate. GA as of 1 May 2026.",
+    definition: "The other top-level family. Agent gets a blueprint + service principal but no agentic user. Default when <code>--aiteammate</code> is omitted. <strong>GA for OBO</strong>, infra-GA for S2S and Both. Right pick for most server-side agents.",
+    references: ["agent365-registration-classes.md §3"],
+    related: ["ai-teammate", "service-principal", "blueprint-only-obo", "blueprint-only-s2s"] },
+  { id: "dev-tunnel", family: "surface", name: "DevTunnel",
+    oneLine: "Microsoft's persistent localhost-to-cloud tunnel — used for local dev so the bot can be reached from M365.",
+    definition: "<code>devtunnel</code> CLI; creates a public URL that proxies to a local port. URL persists across <code>devtunnel host</code> restarts. The agent service binds to a local port (e.g. 3978) and the tunnel exposes <code>https://&lt;tunnel-name&gt;-3978.&lt;region&gt;.devtunnels.ms/api/messages</code> as the registered messaging endpoint.",
+    references: ["LESSONS_LEARNED.md §10"],
+    related: ["callback-uri", "agent-service-process"] },
+  { id: "callback-uri", family: "surface", name: "Callback URI / messaging endpoint",
+    oneLine: "The HTTPS URL the A365 service POSTs Bot Framework activities to.",
+    definition: "The agent's <code>/api/messages</code> URL — what gets registered via <code>setup blueprint --update-endpoint</code>. For dev work this is a dev-tunnel URL. CLI 1.1.109 had a serialisation bug where the field was sent as <code>AppId</code> with no <code>CallbackUri</code>; fixed in 1.1.174.",
+    references: ["LESSONS_LEARNED.md §4", "LESSONS_LEARNED.md §9.1"],
+    related: ["dev-tunnel", "mcp-platform-endpoint", "endpoint-registration-bug"] },
+
+  // ===== Observability (14) =====
+  { id: "agent365-exporter", family: "observability", name: "Agent365 exporter",
+    oneLine: "A365 SDK's OpenTelemetry exporter that POSTs spans to <code>agent365.svc.cloud.microsoft</code>.",
+    definition: "Custom OTel exporter shipped in the <code>microsoft_agents_a365</code> Python SDK. Posts spans to <code>https://agent365.svc.cloud.microsoft/observability/tenants/{tenant_id}/otlp/agents/{agent_id}/traces</code>. Requires a token resolver, both env-var gates set, and structured-scope spans (not plain OTel spans) to render in the admin centre.",
+    references: ["LESSONS_LEARNED.md §12"],
+    related: ["otelwrite-scope", "token-resolver", "structured-scope", "enable-observability-exporter-env"] },
+  { id: "otelwrite-scope", family: "observability", name: "Agent365.Observability.OtelWrite",
+    oneLine: "The OAuth2 scope (delegated or app) required to post spans to A365 observability.",
+    definition: "Full URI: <code>api://9b975845-388f-4429-889e-eab1ef63949c/Agent365.Observability.OtelWrite</code>. The Observability API SP's app ID is <code>9b975845-...</code>. For OBO agents, granted as a delegated scope; for S2S, granted as an app permission. CLI 1.1.174 has the leading-space defect on single-scope delegated grants here.",
+    references: ["LESSONS_LEARNED.md §13"],
+    related: ["agent365-exporter", "delegated-grant", "app-permission", "leading-space-scope-bug"] },
+  { id: "structured-scope", family: "observability", name: "Structured scope (vs plain OTel span)",
+    oneLine: "Specific OpenTelemetry scopes from the A365 SDK; the only spans that render in the Activity tab.",
+    definition: "The A365 admin-centre Activity tab renders only spans created via <code>InvokeAgentScope</code>, <code>InferenceScope</code>, <code>OutputScope</code>, <code>ExecuteToolScope</code>. Plain <code>tracer.start_as_current_span</code> spans are accepted (HTTP 200, <code>rejectedSpans:0</code>) but never surface in the UI. This is the most subtle pitfall in the observability stack.",
+    references: ["LESSONS_LEARNED.md §15", "LESSONS_LEARNED.md §20"],
+    related: ["invoke-agent-scope", "inference-scope", "output-scope", "execute-tool-scope", "activity-tab"] },
+  { id: "invoke-agent-scope", family: "observability", name: "InvokeAgentScope",
+    oneLine: "The outermost structured scope wrapping a single agent turn.",
+    definition: "OpenTelemetry context manager from the A365 SDK. Opens at the start of every agent turn and closes when the turn finishes. Carries baggage (tenant_id, agent_id, user_id) that propagates to child scopes. Required for the turn to appear in admin-centre Activity.",
+    references: ["LESSONS_LEARNED.md §15"],
+    related: ["structured-scope", "inference-scope", "output-scope", "baggage-propagation"] },
+  { id: "inference-scope", family: "observability", name: "InferenceScope",
+    oneLine: "Structured scope around an LLM call, nested inside InvokeAgentScope.",
+    definition: "Wraps a Foundry / OpenAI Responses API call. Captures model name, operation (must be in {<code>chat</code>, <code>invoke_agent</code>, <code>execute_tool</code>, <code>output_messages</code>}), prompt/response metadata. Multiple per turn if the agent makes multiple LLM calls.",
+    references: ["LESSONS_LEARNED.md §15", "LESSONS_LEARNED.md §14"],
+    related: ["invoke-agent-scope", "gen-ai-operation-name", "foundry-responses-api"] },
+  { id: "output-scope", family: "observability", name: "OutputScope",
+    oneLine: "Structured scope around the agent's reply emission.",
+    definition: "Wraps the moment the agent produces its turn output. Captures message count, output format. Nested inside InvokeAgentScope, typically after one or more InferenceScopes.",
+    references: ["LESSONS_LEARNED.md §15"],
+    related: ["invoke-agent-scope", "inference-scope"] },
+  { id: "execute-tool-scope", family: "observability", name: "ExecuteToolScope",
+    oneLine: "Structured scope around a tool invocation (function/MCP call) inside a turn.",
+    definition: "When the agent calls a tool (Graph API helper, MCP server, custom function), wrap it in ExecuteToolScope so the call shows up in the Activity tab as an audited tool-invocation event. Has its own audit-log row type (<code>AIExecuteTool</code>).",
+    references: ["LESSONS_LEARNED.md §14"],
+    related: ["structured-scope", "audit-log-row"] },
+  { id: "token-cache", family: "observability", name: "Token cache",
+    oneLine: "In-memory <code>(tenant_id, agent_id) → bearer-token</code> map keyed for repeated use within a turn.",
+    definition: "Per the <code>token_cache.py</code> module in Draft Dodger. Populated by <code>host_agent_server.py</code> after exchanging the inbound JWT for an OtelWrite token. The OBO token resolver in <code>observability.py</code> reads from this cache. Empty on cold start — the first turn may export without a token (cold-start gap).",
+    references: ["LESSONS_LEARNED.md §12", "LESSONS_LEARNED.md §24"],
+    related: ["token-resolver", "obo", "cold-start-observability-gap"] },
+  { id: "activity-tab", family: "observability", name: "Activity tab",
+    oneLine: "Admin-centre surface showing per-agent activity rows; renders structured-scope spans.",
+    definition: "<code>admin.cloud.microsoft</code> → Agents → &lt;agent&gt; → Activity. Each row is one turn or tool invocation, derived from the structured-scope spans the exporter posted. Has a propagation lag of 1–3 minutes typically; can be up to 24h in extreme cases. Plain OTel spans never appear here.",
+    references: ["LESSONS_LEARNED.md §20", "LESSONS_LEARNED.md §22"],
+    related: ["structured-scope", "audit-log-row", "agent365-exporter"] },
+  { id: "audit-log-row", family: "observability", name: "Audit-log row",
+    oneLine: "Unified audit log entry (RecordType <code>AIInvokeAgent</code> / <code>AIInferenceCall</code> / <code>AIExecuteTool</code>).",
+    definition: "The Purview / Microsoft 365 unified audit log records each structured-scope span as a row with a specific RecordType. Field positions vary by RecordType. Used for compliance reporting and forensic queries; persists independently of the Activity tab UI.",
+    references: ["LESSONS_LEARNED.md §20"],
+    related: ["activity-tab", "structured-scope"] },
+  { id: "gen-ai-operation-name", family: "observability", name: "gen_ai.operation.name allowlist",
+    oneLine: "Required span attribute; only four values accepted: chat, invoke_agent, execute_tool, output_messages.",
+    definition: "A span attribute the A365 exporter validates. If the value is outside the allowlist (e.g. <code>responses</code>, the OpenAI Responses API's own naming), the export silently rejects the span. The SDK's structured scopes set the right value automatically; bare OpenAI auto-instrumentation does not.",
+    references: ["LESSONS_LEARNED.md §14 Bug 2"],
+    related: ["agent365-exporter", "openai-otel-gap", "inference-scope"] },
+  { id: "baggage-propagation", family: "observability", name: "Baggage propagation",
+    oneLine: "OpenTelemetry mechanism for passing context (tenant_id, agent_id, user_id) to child spans.",
+    definition: "OTel's <code>baggage</code> API attaches key-value pairs to a span context that propagate to all child spans within the same trace. The A365 SDK uses this to carry the four required attributes (tenant_id, agent_id, agent_blueprint_id, user_id) from InvokeAgentScope down to every nested InferenceScope / OutputScope / ExecuteToolScope without manual passing.",
+    references: ["LESSONS_LEARNED.md §22"],
+    related: ["invoke-agent-scope", "structured-scope"] },
+  { id: "batch-span-processor", family: "observability", name: "Batch span processor",
+    oneLine: "OTel mechanism that buffers spans and flushes them in batches (default every 5s).",
+    definition: "Default OpenTelemetry span processor. Buffers up to N spans or up to T seconds, then flushes via the exporter. Means the first 5s of a turn might not show up in admin centre immediately — wait briefly before declaring the demo broken.",
+    references: ["LESSONS_LEARNED.md §19"],
+    related: ["agent365-exporter", "otlp-mirror"] },
+  { id: "otlp-mirror", family: "observability", name: "OTLP mirror",
+    oneLine: "Concurrent OTLP exporter posting spans to a local Aspire Dashboard / Jaeger / OTel collector.",
+    definition: "Set <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> to mirror spans to a local OTel collector in parallel with the Agent365 exporter. Useful for in-demo span inspection without waiting for admin-centre propagation.",
+    references: ["LESSONS_LEARNED.md §19"],
+    related: ["batch-span-processor", "agent365-exporter"] },
+
+  // ===== Plumbing / runtime (13) =====
+  { id: "bot-framework-adapter", family: "plumbing", name: "Bot Framework adapter",
+    oneLine: "Library that handles incoming Bot Framework activities and routes them to the agent.",
+    definition: "Part of Microsoft Agents SDK. Provides <code>CloudAdapter</code> + <code>MsalConnectionManager</code> for JWT validation and OBO token exchange. Wired into the agent service via <code>start_with_generic_host.py</code>. Triggers the BF 502 retry storm during onboarding.",
+    references: ["LESSONS_LEARNED.md §8"],
+    related: ["agent-service-process", "bot-framework-502-storm", "obo"] },
+  { id: "agent-service-process", family: "plumbing", name: "Agent service process",
+    oneLine: "The long-running Python process that hosts the agent and handles POST /api/messages.",
+    definition: "Started by <code>uv run python start_with_generic_host.py</code>. Bound to one (CLIENT_ID, CLIENT_SECRET) pair from <code>.env</code>. Listens on PORT. To run two agents in parallel you need two processes, two ports, two tunnels.",
+    references: ["LESSONS_LEARNED.md §21"],
+    related: ["bot-framework-adapter", "dev-tunnel", "env-file"] },
+  { id: "env-vs-config-split", family: "plumbing", name: ".env vs config-file split",
+    oneLine: "Runtime secrets live in .env; static blueprint metadata in a365.config.json. Two parallel sources of truth.",
+    definition: "<code>.env</code> carries CLIENT_ID, CLIENT_SECRET, TENANT_ID, ports, observability gates — read at process start by <code>dotenv</code>. <code>a365.config.json</code> carries blueprint display name, messaging endpoint, tenant, subscription — read by the CLI when running setup. They overlap (both have tenant) but are distinct files.",
+    references: ["LESSONS_LEARNED.md §9.1", "LESSONS_LEARNED.md §12"],
+    related: ["a365-config-json", "a365-generated-config-json", "agent-service-process"] },
+  { id: "enable-observability-env", family: "plumbing", name: "ENABLE_A365_OBSERVABILITY env",
+    oneLine: "Gate that determines whether structured scopes actually emit spans. Manual; CLI does not stamp it.",
+    definition: "<code>ENABLE_A365_OBSERVABILITY=true</code>. Without this, calls to InvokeAgentScope and friends become no-ops — no spans created at all. The CLI doesn't stamp this in <code>.env</code>; you must add it manually after Phase 2.",
+    references: ["LESSONS_LEARNED.md §16"],
+    related: ["enable-observability-exporter-env", "structured-scope"] },
+  { id: "enable-observability-exporter-env", family: "plumbing", name: "ENABLE_A365_OBSERVABILITY_EXPORTER env",
+    oneLine: "Separate gate that determines whether the A365 exporter is installed (vs Console fallback).",
+    definition: "<code>ENABLE_A365_OBSERVABILITY_EXPORTER=true</code>. Both this AND <code>ENABLE_A365_OBSERVABILITY</code> must be true for spans to reach the A365 cloud endpoint. With the first true but the exporter env false, spans get created but only printed to the local Console — they never leave the machine.",
+    references: ["LESSONS_LEARNED.md §16"],
+    related: ["enable-observability-env", "agent365-exporter"] },
+  { id: "observability-debug-env", family: "plumbing", name: "OBSERVABILITY_DEBUG env",
+    oneLine: "Sets log level to DEBUG on the observability + MSAL namespaces AND on the root logger.",
+    definition: "<code>OBSERVABILITY_DEBUG=true</code>. Lowers both the namespace logger AND the root logger / handler — important because setting just the namespace doesn't propagate if the root is at WARNING. Pretty-prints spans + decodes JWT bearer tokens for diagnostic visibility.",
+    references: ["LESSONS_LEARNED.md §14 Bug 4", "LESSONS_LEARNED.md §13"],
+    related: ["enable-observability-env"] },
+  { id: "foundry-responses-api", family: "plumbing", name: "Foundry Responses API",
+    oneLine: "OpenAI-compatible endpoint on Azure AI Foundry; path must end in <code>/openai/v1/</code> and API version must be <code>preview</code>.",
+    definition: "Azure AI Foundry's modern endpoint. Base URL must end in <code>/openai/v1/</code> (not <code>/openai/</code>); <code>api-version</code> must be <code>preview</code>; reject <code>?api-version=...</code> in the URL because the SDK appends it. Newer models (gpt-5.4-nano) require this path; older models still work on Chat Completions.",
+    references: ["LESSONS_LEARNED.md §1.2", "LESSONS_LEARNED.md §1.3"],
+    related: ["foundry-audience", "async-callable-api-key", "openai-responses-api"] },
+  { id: "azure-openai-responses-client-deprecated", family: "plumbing", name: "AzureOpenAIResponsesClient (deprecated)",
+    oneLine: "A365 SDK's wrapper class for the Foundry Responses API — broken; hardcodes wrong api-version.",
+    definition: "Was meant to be the canonical way to call Foundry Responses API from Python. Hardcodes <code>api_version=preview</code> in the URL query, which the <code>/v1/</code> path rejects, returning HTTP 400. Avoid; use the upstream <code>openai</code> SDK directly with an async-callable api_key for the bearer token.",
+    references: ["LESSONS_LEARNED.md §1.3", "LESSONS_LEARNED.md §2.2"],
+    related: ["foundry-responses-api", "openai-responses-api"] },
+  { id: "openai-responses-api", family: "plumbing", name: "OpenAI Responses API",
+    oneLine: "OpenAI's structured-reasoning API; what gpt-5.4-nano expects; not auto-instrumented by OpenAI's OTel package.",
+    definition: "The newer OpenAI inference shape (vs Chat Completions). Returns structured response objects with reasoning, tool calls, citations. The agent uses this for Draft Dodger because gpt-5.4-nano requires it. Not patched by <code>opentelemetry-instrumentation-openai-v2</code>, hence we wrap turns in A365 structured scopes manually.",
+    references: ["LESSONS_LEARNED.md §11"],
+    related: ["foundry-responses-api", "openai-otel-gap", "inference-scope"] },
+  { id: "openai-otel-gap", family: "plumbing", name: "OpenAI OTel auto-instrumentation gap",
+    oneLine: "The Python <code>opentelemetry-instrumentation-openai-v2</code> package does NOT patch the Responses API.",
+    definition: "Only patches <code>chat.completions</code>, not <code>responses</code>. Means Responses API calls don't get automatic spans. The A365 SDK fills this gap with structured scopes (InvokeAgentScope/InferenceScope/OutputScope) that the agent wires manually around each turn.",
+    references: ["LESSONS_LEARNED.md §11"],
+    related: ["openai-responses-api", "structured-scope"] },
+  { id: "async-callable-api-key", family: "plumbing", name: "Async callable api_key",
+    oneLine: "Pattern for passing Entra-issued bearer tokens to the OpenAI SDK — pass a callable, not a static string.",
+    definition: "OpenAI Python SDK accepts <code>api_key</code> as a callable. Pass an async function that returns the current bearer token (refreshed via <code>az.identity.DefaultAzureCredential</code> or similar). The SDK invokes it before every request, so token expiry self-heals.",
+    references: ["LESSONS_LEARNED.md §3"],
+    related: ["foundry-audience", "foundry-responses-api"] },
+  { id: "foundry-audience", family: "plumbing", name: "Foundry audience",
+    oneLine: "The token audience Foundry expects: <code>https://ai.azure.com/.default</code> — not <code>cognitiveservices</code>.",
+    definition: "When acquiring a token for Foundry calls, scope it to <code>https://ai.azure.com/.default</code>. Using the older <code>cognitiveservices.azure.com</code> audience returns 401, even if the same principal has access. Easy mistake when switching from Azure OpenAI to Foundry.",
+    references: ["LESSONS_LEARNED.md §1.1"],
+    related: ["audience-mismatch", "foundry-responses-api"] },
+  { id: "msal-confidential-app", family: "plumbing", name: "MSAL ConfidentialClientApplication",
+    oneLine: "Python MSAL class used to acquire S2S tokens via client_credentials.",
+    definition: "<code>msal.ConfidentialClientApplication(client_id, client_credential, authority)</code> — the canonical way to acquire bearer tokens from your own clientId + clientSecret. Used in the S2S token resolver. <code>acquire_token_for_client(scopes=['api://.../.default'])</code> returns a token cached for ~1h.",
+    references: ["DUPLICATE-REGISTRATION.md Part B §10.3"],
+    related: ["s2s", "token-resolver", "client-credentials-grant"] },
+
+  // ===== Lifecycle / process (10) =====
+  { id: "a365-config-json", family: "lifecycle", name: "a365.config.json",
+    oneLine: "Source-of-truth config the CLI reads to know what to register. Hand-authored.",
+    definition: "Project-local input config. Contains <code>tenantId</code>, <code>subscriptionId</code>, <code>messagingEndpoint</code>, <code>agentBlueprintDisplayName</code>, <code>aiTeammate</code> (true/false), etc. When you run <code>a365 setup blueprint</code> without <code>-n</code>, the CLI reads this file. With <code>-n</code> the CLI ignores it and derives values from flags.",
+    references: ["LESSONS_LEARNED.md §9.1"],
+    related: ["a365-generated-config-json", "n-name-keyed-slot", "env-vs-config-split"] },
+  { id: "a365-generated-config-json", family: "lifecycle", name: "a365.generated.config.json",
+    oneLine: "Auto-generated output config from the CLI. Don't hand-edit.",
+    definition: "Project-local output file written by <code>a365 setup blueprint</code>. Contains <code>agentBlueprintId</code>, <code>agentInstanceId</code>, <code>botMsaAppId</code>, <code>agentBlueprintClientSecret</code>, resource consent state, and the messaging endpoint. Re-running setup rotates the client secret and overwrites the file.",
+    references: ["LESSONS_LEARNED.md §9.1"],
+    related: ["a365-config-json", "n-name-keyed-slot"] },
+  { id: "n-name-keyed-slot", family: "lifecycle", name: "-n name-keyed slot",
+    oneLine: "CLI flag that bypasses project config and stores blueprint state in a separate named location.",
+    definition: "<code>-n &quot;Some Agent Name&quot;</code> tells the CLI: don't read <code>a365.config.json</code>, don't write <code>a365.generated.config.json</code>; use a name-keyed store instead. Allows multiple blueprints to coexist in the same tenant without their configs colliding — essential for parallel-then-decommission.",
+    references: ["DUPLICATE-REGISTRATION.md §5"],
+    related: ["a365-config-json", "a365-generated-config-json", "parallel-then-decommission"] },
+  { id: "parallel-then-decommission", family: "lifecycle", name: "Parallel-then-decommission pattern",
+    oneLine: "Stand up the new blueprint alongside the old; verify; migrate; only then destroy old.",
+    definition: "Recommended pattern for class migration or re-registration. Phase 1: create new with <code>-n</code>. Phase 2: verify pilot. Phase 3: migrate users. Phase 4: destroy old. Old keeps serving traffic through phases 1–3; destruction is the last step. Documented in AGENT-CLASS-MIGRATION.md and DUPLICATE-REGISTRATION.md.",
+    references: ["AGENT-CLASS-MIGRATION.md §2", "DUPLICATE-REGISTRATION.md §2"],
+    related: ["n-name-keyed-slot", "parallel-tunnel"] },
+  { id: "leading-space-scope-bug", family: "lifecycle", name: "Leading-space scope bug",
+    oneLine: "CLI 1.1.174 defect: single-scope oauth2PermissionGrants emit with a leading space in the scope field.",
+    definition: "On OBO single-scope grants (e.g. <code>Agent365.Observability.OtelWrite</code>), the CLI writes the grant with a literal leading space: <code>&quot; Agent365.Observability.OtelWrite&quot;</code>. Runtime token exchange then fails with <code>AADSTS65001 — user or administrator has not consented</code> despite the grant existing. Fix: Graph PATCH to strip the space. S2S app permissions (appRoleAssignments) are not affected.",
+    references: ["LESSONS_LEARNED.md §13"],
+    related: ["oauth2-permission-grant", "delegated-grant", "obo"] },
+  { id: "bot-framework-502-storm", family: "lifecycle", name: "Bot Framework 502 retry storm",
+    oneLine: "Initial onboarding generates ~70 retries on the BF agentOnboarding flow; self-heals in ~2 minutes.",
+    definition: "Immediately after blueprint registration, Bot Framework's onboarding handshake retries aggressively before settling. You see a flood of HTTP 502 in the agent service log for the first 5–10 minutes. Wait it out — do not restart the agent. Self-heals once the BF service finishes provisioning.",
+    references: ["LESSONS_LEARNED.md §8"],
+    related: ["bot-framework-adapter", "callback-uri"] },
+  { id: "endpoint-registration-bug", family: "lifecycle", name: "Endpoint-registration field-name mismatch (CLI 1.1.109)",
+    oneLine: "Old CLI sent <code>AppId</code> + no <code>CallbackUri</code>; backend expected <code>AgentIdentityBlueprintId</code> + <code>CallbackUri</code>.",
+    definition: "CLI 1.1.109 serialised the endpoint-registration request with the wrong field names. The backend returned <code>CallbackUri is required</code> errors even when the value was clearly set in the local config. Fixed in 1.1.174; verify your CLI is at least that version before doing endpoint work.",
+    references: ["LESSONS_LEARNED.md §4"],
+    related: ["callback-uri"] },
+  { id: "multi-instance-scenario", family: "lifecycle", name: "Multi-instance scenario",
+    oneLine: "One blueprint, many per-user agentic-user instances — each has its own <code>agentic_app_id</code>.",
+    definition: "AI Teammate blueprints provision a fresh agentic-user instance per invoking user. The instance carries a distinct <code>agentic_app_id</code> (different from the blueprint ID and from other users' instances). The token cache and audit attribution must key on instance, not blueprint, to be correct.",
+    references: ["LESSONS_LEARNED.md §24"],
+    related: ["agentic-app-id", "instance-id", "token-cache", "hardcoded-instance-fallback-bug"] },
+  { id: "hardcoded-instance-fallback-bug", family: "lifecycle", name: "Hardcoded-instance fallback bug (TS-only)",
+    oneLine: "Static AGENT_INSTANCE_ID env var or string literal breaks per-turn token resolution. Python implementation is immune.",
+    definition: "An issue in the TypeScript A365 SDK where, if you fell back to a static instance ID, the token resolver would always use that one — breaking multi-instance scenarios where each user's turn should resolve a different agentic-user token. The Python implementation reads from <code>context.activity.recipient.agentic_app_id</code> per turn and has no such fallback.",
+    references: ["LESSONS_LEARNED.md §24"],
+    related: ["agentic-app-id", "multi-instance-scenario", "token-cache"] },
+  { id: "cold-start-observability-gap", family: "lifecycle", name: "Cold-start observability gap",
+    oneLine: "First turn after agent startup may not export — token cache is empty until that turn's JWT is exchanged.",
+    definition: "The OBO token resolver reads from the token cache, which is populated by the inbound-JWT exchange inside the first turn's request handler. If the exporter tries to flush spans before that exchange completes, the resolver returns None and spans drop. SDK retries on subsequent turns; lost first-turn spans are usually acceptable for demos.",
+    references: ["LESSONS_LEARNED.md §12"],
+    related: ["token-cache", "token-resolver", "obo"] },
+  { id: "admin-consent-aadsts500113", family: "lifecycle", name: "Admin-consent URL AADSTS500113",
+    oneLine: "Standard <code>/v2.0/adminconsent</code> URL doesn't work for auto-provisioned agentic-user clients.",
+    definition: "When trying to admin-consent for an agentic-user client app via the standard URL, you get <code>AADSTS500113: No reply address is registered for the application</code>. Agentic-user apps are auto-provisioned without redirect URIs. Workaround: consent via Graph PATCH directly on <code>oauth2PermissionGrants</code> or have a Global Admin use the CLI's printed URL.",
+    references: ["LESSONS_LEARNED.md §13"],
+    related: ["admin-consent", "leading-space-scope-bug"] },
+
+  // ===== Additional concepts to round out to 85 =====
+  { id: "m365-flag", family: "auth", name: "--m365 flag",
+    oneLine: "CLI flag that registers the messaging endpoint via MCP Platform rather than Teams Developer Portal.",
+    definition: "<code>--m365</code> on <code>a365 setup blueprint</code>, <code>setup all</code>, and <code>setup blueprint --update-endpoint</code>. Without it, the CLI silently no-ops on endpoint updates (Skipping messaging endpoint update — this command only applies to M365 agents). Mandatory for any M365-integrated agent.",
+    references: ["LESSONS_LEARNED.md §5.1"],
+    related: ["mcp-platform-endpoint", "callback-uri"] },
+  { id: "aiteammate-flag", family: "auth", name: "--aiteammate flag",
+    oneLine: "CLI flag selecting whether the agent has its own agentic-user identity.",
+    definition: "<code>--aiteammate true</code> → AI Teammate (own Entra user). <code>--aiteammate false</code> (or omitted) → Blueprint-only (SP only). Lives on <code>a365 setup all</code> and <code>a365 publish</code>, not on <code>a365 setup blueprint</code> alone. Overrides the <code>aiTeammate</code> field in <code>a365.config.json</code>.",
+    references: ["agent365-registration-classes.md §4"],
+    related: ["ai-teammate", "blueprint-only", "use-blueprint-flag"] },
+  { id: "use-blueprint-flag", family: "auth", name: "--use-blueprint flag",
+    oneLine: "CLI flag that marks a Blueprint-only agent as 'not a digital worker' (the non-DW variant).",
+    definition: "Pair with <code>--aiteammate false</code>. Signals the agent should register via the non-DW pathway. Microsoft-internal pattern; only pick it if the A365 product team has directed you. Public flag but speculative for general use.",
+    references: ["agent365-registration-classes.md §6"],
+    related: ["non-dw", "aiteammate-flag"] },
+  { id: "non-dw", family: "surface", name: "Blueprint-based Non-DW agent",
+    oneLine: "Variant of Blueprint-only that's flagged as 'not a digital worker'. Internal Microsoft pattern.",
+    definition: "Selected via <code>--m365 --aiteammate false --use-blueprint</code>. The 'DW' refers to digital worker — this class explicitly says the agent isn't one. Documentation explicitly says don't pick it unless the A365 product team has directed you. Status: TBC.",
+    references: ["agent365-registration-classes.md §6"],
+    related: ["use-blueprint-flag", "blueprint-only"] },
+  { id: "ai-teammate-m365", family: "surface", name: "AI Teammate (M365)",
+    oneLine: "AI Teammate class with messaging endpoint registered via MCP Platform; surfaces in M365 Copilot Agents tab.",
+    definition: "<code>--m365 --aiteammate true</code>. Own Entra agentic-user identity, mailbox, Teams presence. Registered via MCP Platform → reachable from M365 Copilot. Admin consent required. Currently <strong>Frontier preview</strong>; trial licenses extended to December 2026. This is Draft Dodger's current class.",
+    references: ["agent365-registration-classes.md §1"],
+    related: ["ai-teammate", "mcp-platform-endpoint", "agentic-user-identity"] },
+  { id: "ai-teammate-non-m365", family: "surface", name: "AI Teammate (non-M365)",
+    oneLine: "AI Teammate class with messaging endpoint registered via Teams Developer Portal; Teams-only.",
+    definition: "<code>--aiteammate true</code> without <code>--m365</code>. Same identity model as the M365 variant but the bot endpoint is configured through Teams Developer Portal. Agent surfaces only in Teams channels, not in M365 Copilot. Still Frontier preview.",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["ai-teammate", "teams-developer-portal"] },
+  { id: "blueprint-only-obo", family: "surface", name: "Blueprint-only with OBO (M365) — DEFAULT",
+    oneLine: "CLI default for non-AI-Teammate agents. GA as of 1 May 2026. SP-only, OBO delegated permissions.",
+    definition: "<code>--m365</code> with no <code>--aiteammate</code> and no <code>--authmode</code>. Service principal only, no Entra user. Delegated permissions only; no admin consent needed for OBO scopes. GA. The right pick for most server-side agents that act on behalf of a calling user.",
+    references: ["agent365-registration-classes.md §3"],
+    related: ["blueprint-only", "obo", "delegated-grant"] },
+  { id: "blueprint-only-s2s", family: "surface", name: "Blueprint-only with S2S (M365)",
+    oneLine: "Blueprint-only with app permissions; agent acts as itself; requires admin consent. Infra-GA.",
+    definition: "<code>--m365 --authmode s2s</code>. Service principal with app permissions on the agent identity. No user context. Admin consent required for every scope. Infra-GA. Right pick for autonomous workloads — Databricks jobs, scheduled tasks, queue workers, monitoring agents.",
+    references: ["agent365-registration-classes.md §4"],
+    related: ["blueprint-only", "s2s", "app-permission", "admin-consent"] },
+  { id: "blueprint-only-both", family: "surface", name: "Blueprint-only with Both grants (M365)",
+    oneLine: "Both delegated and app permissions configured. Maximum flexibility, broadest blast radius.",
+    definition: "<code>--m365 --authmode both</code>. Handles both user-triggered (OBO) and autonomous (S2S) flows. Admin consent required. Microsoft's docs say 'pick deliberately' — usually a sign that two separate agents would be cleaner. Use only when one agent legitimately needs both modes.",
+    references: ["agent365-registration-classes.md §5"],
+    related: ["blueprint-only", "obo", "s2s"] },
+  { id: "global-administrator-role", family: "auth", name: "Global Administrator role",
+    oneLine: "Entra role required for admin consent. Mandatory for S2S registration and several OBO permission grants.",
+    definition: "Holder can consent to permissions tenant-wide. Required by <code>a365 setup permissions {mcp,bot,...}</code> and (effectively) by <code>a365 setup all</code>. If the CLI operator isn't a Global Admin, the CLI prints an admin-consent URL for a Global Admin to visit.",
+    references: ["agent365-registration-classes.md §4"],
+    related: ["admin-consent", "agent-id-developer-role"] },
+  { id: "agent-id-developer-role", family: "auth", name: "Agent ID Developer role",
+    oneLine: "Entra role required to create blueprints. Less privileged than Global Admin.",
+    definition: "Tenant-scoped role permitting blueprint creation via <code>a365 setup blueprint</code>. Doesn't grant the ability to consent permissions — that still needs Global Admin for the <code>setup permissions</code> step (or a separate Global Admin clicks the consent URL).",
+    references: ["agent365-registration-classes.md §3"],
+    related: ["global-administrator-role", "blueprint"] },
+  { id: "client-credentials-grant", family: "auth", name: "client_credentials grant",
+    oneLine: "OAuth2 grant type used by S2S agents to acquire tokens with their own clientId + secret.",
+    definition: "Standard OAuth2 grant. Agent POSTs to Entra's token endpoint with <code>grant_type=client_credentials</code>, its clientId, clientSecret, and scope (e.g. <code>api://.../.default</code>). Returns a bearer token scoped to the agent's app permissions. No user, no refresh tokens, ~1h validity.",
+    references: ["DUPLICATE-REGISTRATION.md Part B §10.3"],
+    related: ["s2s", "msal-confidential-app", "obo-grant"] },
+  { id: "obo-grant", family: "auth", name: "on_behalf_of grant",
+    oneLine: "OAuth2 grant type used by OBO agents to exchange an inbound user JWT for a downstream-scoped token.",
+    definition: "Extension grant defined by Microsoft. Agent POSTs to Entra with <code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code>, <code>requested_token_use=on_behalf_of</code>, the inbound user JWT, and a target scope. Entra returns a new token scoped to the requested resource, attributed to the original user.",
+    references: ["agent365-registration-classes.md §2"],
+    related: ["obo", "client-credentials-grant"] },
+  { id: "client-secret", family: "identity", name: "Client secret",
+    oneLine: "Per-blueprint Entra app secret; rotated by the CLI on every setup blueprint run.",
+    definition: "The password the agent uses to authenticate as its Entra app. Stored in <code>a365.generated.config.json</code> and stamped into <code>.env</code> as <code>CLIENT_SECRET</code> + <code>CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET</code>. Rotated to a new value every time <code>a365 setup blueprint</code> runs.",
+    references: ["LESSONS_LEARNED.md §9.1"],
+    related: ["entra-application", "env-vs-config-split"] },
+  { id: "agent-365-cli", family: "lifecycle", name: "Agent 365 CLI (a365)",
+    oneLine: "Microsoft.Agents.A365.DevTools.Cli — .NET-based CLI installed via <code>dotnet tool install</code>.",
+    definition: "Installed with <code>dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli</code>. Updated with <code>dotnet tool update -g ...</code>. Must be ≥ 1.1.174 to avoid the endpoint-registration field-name bug. Source of truth for available commands and flags is <code>a365 &lt;cmd&gt; --help</code>.",
+    references: ["LESSONS_LEARNED.md §4"],
+    related: ["endpoint-registration-bug"] },
+  { id: "parallel-tunnel", family: "plumbing", name: "Parallel tunnel",
+    oneLine: "A second dev tunnel for running a v2 agent service alongside the live one.",
+    definition: "When doing parallel-then-decommission, the live tunnel keeps serving the original agent. The v2 agent service needs its own tunnel on a different port so both can run simultaneously. Convention: name the v2 tunnel descriptively (e.g. <code>a365-draft-dodger-local-reregister</code>).",
+    references: ["DUPLICATE-REGISTRATION.md §1.3"],
+    related: ["dev-tunnel", "parallel-then-decommission", "agent-service-process"] },
+  { id: "a365-publish-overwrites-description", family: "lifecycle", name: "a365 publish overwrites description",
+    oneLine: "Known quirk: every <code>a365 publish</code> overwrites your custom manifest description with a placeholder.",
+    definition: "CLI 1.1.174+ stopped auto-uploading manifests but regenerates them in place. The generated <code>manifest.json</code> has a generic placeholder description. Snapshot before publish, re-edit after, re-zip. Easy to miss on the demo day.",
+    references: ["LESSONS_LEARNED.md §5.2"],
+    related: ["manifest-zip"] },
+  { id: "az-rest", family: "auth", name: "az rest",
+    oneLine: "Azure CLI subcommand for raw Microsoft Graph calls — used to inspect and PATCH grants.",
+    definition: "<code>az rest -m GET --url https://graph.microsoft.com/v1.0/oauth2PermissionGrants?...</code>. Used to verify and fix the leading-space scope bug, and to inspect appRoleAssignments for S2S verification. Authenticates as the signed-in <code>az</code> user.",
+    references: ["LESSONS_LEARNED.md §13"],
+    related: ["oauth2-permission-grant", "app-role-assignment", "leading-space-scope-bug"] },
+  { id: "msal", family: "plumbing", name: "MSAL (Microsoft Authentication Library)",
+    oneLine: "Python library for acquiring Entra tokens; provides ConfidentialClientApplication + PublicClientApplication.",
+    definition: "<code>import msal</code>. The canonical way to acquire tokens from your own credentials. The agent uses it indirectly via Bot Framework's <code>MsalConnectionManager</code> (OBO) and directly in the S2S walkthrough's custom token resolver (<code>ConfidentialClientApplication.acquire_token_for_client</code>).",
+    references: ["DUPLICATE-REGISTRATION.md Part B §10.3"],
+    related: ["msal-confidential-app", "client-credentials-grant", "token-resolver"] },
+  { id: "tenant-id", family: "identity", name: "Tenant ID",
+    oneLine: "GUID identifying the Entra tenant. Auto-detected by the CLI from <code>az account show</code>.",
+    definition: "The blueprint, all Entra grants, and all observability spans are scoped to a tenant. Stamped into <code>.env</code> as <code>TENANT_ID</code> + <code>CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID</code>. Override CLI auto-detection with <code>--tenant-id</code>.",
+    references: ["agent365-registration-classes.md §3"],
+    related: ["blueprint", "agent-365-cli"] },
+  { id: "directory-tenant", family: "identity", name: "Directory tenant vs workforce tenant",
+    oneLine: "The kind of Entra tenant the agent is registered in — affects available roles and licensing.",
+    definition: "Most A365 work happens in workforce (corporate) tenants. Customer/CIAM tenants have a different role/permission model. Personal MSA tenants don't support blueprints at all. Confirm the tenant kind before assuming a registration will work.",
+    references: ["agent365-registration-classes.md §1"],
+    related: ["tenant-id", "blueprint"] },
+
+  // ===== From a365-deep-dive-deck-v3.md (May 2026) =====
+  { id: "shadow-agent", family: "lifecycle", name: "Shadow agent",
+    oneLine: "An unregistered AI agent operating outside A365's governance perimeter — invisible to admin, audit, and conditional access.",
+    definition: "A Copilot Studio bot, Foundry agent, custom Python script, or third-party tool that runs inside the tenant without being registered in A365. No blueprint, no managed service principal, no row in the Agents inventory. Defender for Cloud Apps detects them by network signatures and surfaces them in the Quarantine collection of the agent registry. The governance gap A365's identity model exists to close.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["agent-registry", "agent-collections", "blueprint"] },
+  { id: "agent-card-manifest", family: "surface", name: "Agent card manifest",
+    oneLine: "Metadata document describing an agent's skills and discovery info — distinct from the Teams app manifest.",
+    definition: "JSON metadata registered with Entra Agent ID / A365 that advertises what skills the agent has, what data it can act on, and how other agents (A2A) discover it. <strong>Distinct from</strong> <code>manifest.zip</code>: the card manifest is the agent-to-platform contract; the Teams manifest is the agent-to-user-install contract.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["manifest-zip", "agent-registry", "a2a"] },
+  { id: "agent-registry", family: "surface", name: "Agent registry",
+    oneLine: "Tenant-wide metadata repository for every registered agent. The single source of truth for agent governance.",
+    definition: "Central directory of registered agents — blueprints, agent card manifests, owner/sponsor pairs, sensitivity labels, collection membership. Surfaces in <a href='https://admin.cloud.microsoft' target='_blank'>admin.cloud.microsoft</a> → Agents. Without registration, an agent is a 'shadow agent' and sits outside Conditional Access, DLP, and audit. The registry is what makes 'apply Conditional Access to agents' technically possible.",
+    references: ["a365-deep-dive-deck-v3.md", "https://learn.microsoft.com/en-us/microsoft-365/admin/manage/agent-registry"],
+    related: ["m365-admin-centre-agents", "shadow-agent", "agent-collections"] },
+  { id: "agent-collections", family: "surface", name: "Collections (Global / Custom / Quarantine)",
+    oneLine: "Registry-level groupings that enforce Zero Trust discoverability between agents.",
+    definition: "An agent's collection membership controls which other agents can discover and call it via A2A. <strong>Global</strong> — vetted, trusted agents that can see each other. <strong>Custom</strong> — department- or project-scoped groups with explicit discovery policies. <strong>Quarantine</strong> — auto-populated by Defender when shadow agents are detected; isolated, no inter-agent discovery until promoted by an admin.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["agent-registry", "shadow-agent", "a2a"] },
+  { id: "agent-map", family: "surface", name: "Agent map",
+    oneLine: "Visual graph in M365 Admin Centre showing connections between agents, people, and data sources.",
+    definition: "Admin-centre visualisation of the agent attack surface — which agents call which other agents, which data sources each touches, which users they act on behalf of. Designed for CISO-level review of agent risk posture without drilling into individual blueprints.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["agent-registry", "agent-collections", "m365-admin-centre-agents"] },
+  { id: "work-iq", family: "plumbing", name: "Work IQ",
+    oneLine: "M365's organisational-context layer (org chart, collaboration patterns, document graph) that agents can query.",
+    definition: "The graph of organisational signal — org chart, manager hierarchy, calendar patterns, doc co-authorship — exposed to agents via Microsoft Graph + MCP servers. AI Teammate agents call into Work IQ to know 'who's the right person to ask about X', 'what's the team's process here'. Differentiates A365 vs Bedrock/Vertex agents that have no native org context.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["mcp-servers-microsoft", "ai-teammate"] },
+  { id: "mcp-servers-microsoft", family: "plumbing", name: "Microsoft MCP servers (the seven)",
+    oneLine: "Microsoft's first-party MCP servers: Outlook, Teams, Calendar, SharePoint, Dynamics 365, Search, Profile.",
+    definition: "Officially-maintained Model Context Protocol servers that expose M365 data and actions to agents via the standard MCP wire protocol. Replace per-app custom connectors. Configured through <code>a365 develop add-mcp-servers</code>. Tool invocations are wrapped in <code>ExecuteToolScope</code> for observability.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["execute-tool-scope", "work-iq", "agent-365-cli"] },
+  { id: "a2a", family: "auth", name: "Agent-to-Agent (A2A)",
+    oneLine: "Inter-agent collaboration: agent A calls agent B using Entra-issued tokens (not shared secrets, not user impersonation).",
+    definition: "When agent A calls agent B, A authenticates to B's service principal using Entra tokens. Discovery is gated by agent-registry collection membership — A can only see B if they share a collection. Audit attribution: both agents log the call. Effectively S2S between agent identities, with optional user-context propagation.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["agent-collections", "service-principal", "agent-registry", "s2s"] },
+  { id: "agent-owner-sponsor", family: "lifecycle", name: "Agent owner vs sponsor",
+    oneLine: "Two mandatory roles per agent: Owner = Developer / IT Pro (technical), Sponsor = PM / Team Lead (business-accountable).",
+    definition: "Every registered agent must have both: a <strong>Sponsor</strong> — a PM or Team Lead with business accountability for the agent's actions and lifecycle decisions, the EU AI Act Article 14 oversight contact, with auto-succession on exit so the agent doesn't outlive its sponsor's tenure — and an <strong>Owner</strong> — a Developer or IT Pro responsible for setup, configuration, credential management, and the ability to disable or delete the agent. Sponsor absence triggers Entra Lifecycle Workflows to reassign or decommission. The Owner has the technical write key; the Sponsor has the business write-down key.",
+    references: ["a365-deep-dive-deck-v3.md", "Agent 365 conc.pptx slide 1"],
+    related: ["lifecycle-workflows", "entra-id-governance", "blueprint"] },
+  { id: "lifecycle-workflows", family: "lifecycle", name: "Entra Lifecycle Workflows (for agents)",
+    oneLine: "Entra-driven automation triggered by agent-lifecycle events (create / sponsor change / inactivity / decommission).",
+    definition: "Workflow templates run by Entra ID Governance. On agent creation → notify sponsor + add to default collection. On sponsor change → re-evaluate access reviews. On sponsor departure → auto-decommission or reassign. On inactivity → flag for review. Ensures agents don't outlive their business owner.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["agent-owner-sponsor", "entra-id-governance"] },
+  { id: "entra-id-governance", family: "lifecycle", name: "Entra ID Governance (for agents)",
+    oneLine: "Entra's identity-governance suite — access reviews, entitlement management, lifecycle workflows — extended to agent service principals.",
+    definition: "The same governance primitives that exist for human users — periodic access reviews, role-based entitlement packages, automated lifecycle workflows — apply to agent identities. An agent's permissions, owner, sponsor, and active status are all subject to the tenant's standard governance cadence rather than being one-time setups.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["lifecycle-workflows", "agent-owner-sponsor", "service-principal"] },
+  { id: "agent-notifications", family: "plumbing", name: "Notifications (inbound M365 events)",
+    oneLine: "M365 event subscriptions (email, calendar, document, Teams, task) that trigger agent actions.",
+    definition: "An agent registers for inbound M365 events — new email matching a filter, calendar invite received, document change, Teams message, Planner task — and reacts. Completes the bidirectional integration model: the agent doesn't only respond to direct invocation, it can also be triggered by tenant activity it has permission to observe.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["mcp-servers-microsoft", "agent-service-process"] },
+  { id: "pp-solutions-identity-vs-logic", family: "lifecycle", name: "Power Platform solutions — identity vs logic split",
+    oneLine: "Solution export/import moves Copilot Studio agent logic between environments, but NOT the identity. Each environment needs its own blueprint.",
+    definition: "Power Platform's solution mechanism cleanly moves agent logic (topics, actions, manifest content) between Dev / Test / Prod environments — but the identity layer is strictly per-environment. Each environment gets its own blueprint and its own agent service principal. CI/CD pipelines designed for code-only artifacts leak identities. Plan credential management per environment, separately from logic promotion.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["blueprint", "a365-config-json", "parallel-then-decommission"] },
+  { id: "cloud-app-events", family: "observability", name: "CloudAppEvents (Defender audit table)",
+    oneLine: "Defender for Cloud Apps audit table covering agent activity; KQL-queryable in Advanced Hunting.",
+    definition: "Agent invocations, tool calls, A2A exchanges, and policy decisions write into the <code>CloudAppEvents</code> table in Microsoft Defender XDR's Advanced Hunting. The right table to KQL when investigating an agent incident — adjacent to but distinct from the Activity tab (which is a UI surface over the same data).",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["activity-tab", "audit-log-row"] },
+  { id: "agent-user", family: "identity", name: "Agent user (mailbox / Teams presence)",
+    oneLine: "Optional M365 user identity attached to a blueprint — required for the agent to send email or chat as itself.",
+    definition: "Some agents need to send email or post in Teams <em>as themselves</em> (not on behalf of a calling user). That requires the agent to have a mailbox-bearing M365 user identity. For AI Teammate agents this is the agentic user identity. For Blueprint-only agents you'd need to additionally provision a service-account user and consent the agent's app to send-as it. Licensing implication: per-agent M365 license required.",
+    references: ["a365-deep-dive-deck-v3.md"],
+    related: ["agentic-user-identity", "blueprint", "ai-teammate"] },
+
+  // ===== From Agent 365 conc.pptx (May 2026) =====
+  { id: "blueprint-principal", family: "identity", name: "Blueprint Principal",
+    oneLine: "Your tenant's instance of a multi-tenant blueprint — a Service Principal of the blueprint App Registration.",
+    definition: "When a multi-tenant <a href='#c-blueprint'>Blueprint</a> (an App Registration) is added to your tenant, Entra automatically creates a <strong>Service Principal of that app</strong> in your tenant. That SP is the <strong>Blueprint Principal</strong>. It holds tenant-specific credentials (admin consent grants, secrets if any), and it's the principal that <em>creates</em> Agent Identities in your tenant — each deployed agent instance is a fresh Service Principal of subtype <code>agent</code> that the Blueprint Principal provisions. Conceptually mirrors how a multi-tenant SaaS app gets a 'service principal of the app' in every consuming tenant.",
+    references: ["Agent 365 conc.pptx slide 1"],
+    related: ["blueprint", "agent-identity", "sp-subtype-agent", "service-principal"] },
+  { id: "agent-odata-type", family: "identity", name: "Agent OData type",
+    oneLine: "Graph-level discriminator (<code>agent</code>) that distinguishes A365 blueprint App Registrations from regular LOB apps.",
+    definition: "In Microsoft Graph, every App Registration carries an OData type marker. A365 Blueprints are marked with the <code>agent</code> subtype. You can filter Graph queries by it (e.g. <code>$filter=odata.type eq '#microsoft.graph.agent'</code>) to enumerate just A365 blueprints in a tenant — useful for governance dashboards and registry audits. The discriminator is what makes 'list all agents' a meaningful Graph query rather than 'all the apps' returning thousands of LOB apps.",
+    references: ["Agent 365 conc.pptx slide 1"],
+    related: ["blueprint", "entra-application", "agent-registry"] },
+  { id: "sp-subtype-agent", family: "identity", name: "SP subtype <code>agent</code>",
+    oneLine: "Service Principal subtype flag identifying an SP as an Agent Identity (vs Blueprint Principal vs regular SP).",
+    definition: "Entra Service Principals carry a subtype field. <strong>Agent Identities</strong> are SPs with subtype <code>agent</code>, single-tenant, no stored credentials. This is distinct from the <strong>Blueprint Principal</strong> (which is a normal SP of a multi-tenant blueprint app) and from <strong>regular LOB SPs</strong>. The subtype is what gates agent-specific Conditional Access and ID Protection policies — they target by SP subtype rather than by name.",
+    references: ["Agent 365 conc.pptx slide 1"],
+    related: ["agent-identity", "blueprint-principal", "service-principal", "conditional-access"] },
+  { id: "federated-credential", family: "auth", name: "Federated credential (Agent User)",
+    oneLine: "Auth mechanism for Agent Users: no password, no shared secret — credential issued and verified through Entra federation.",
+    definition: "Agent User accounts have no password. They authenticate via <strong>federated credentials</strong> tied to the Agent Identity SP — Entra issues short-lived credentials to the agent service principal that prove the user's identity without ever materialising a password. Two consequences: (1) no human can 'log in as the agent' because there's nothing to type into a password field; (2) phishing attacks that target the agent have no shared secret to steal. Operationally similar to workload-identity-federation for Azure compute.",
+    references: ["Agent 365 conc.pptx slide 1"],
+    related: ["agentic-user-identity", "agent-identity", "ai-teammate"] },
+  { id: "authentication-systems-plane", family: "auth", name: "Authentication Systems plane",
+    oneLine: "The primary-auth layer for Agent Identities — Entra token issuance + validation, integrated with the Agent Registry.",
+    definition: "The conceptual layer that handles primary authentication for all Agent Identities in the tenant. Entra ID issues tokens to Agent Identities, validates them on incoming calls, and consults the <a href='#c-agent-registry'>Agent Registry</a> for discovery and policy decisions at auth time (e.g. 'is this agent in a collection that allows it to be called by that other agent?'). One of the four conceptual planes that wrap the Identity plane.",
+    references: ["Agent 365 conc.pptx slide 1"],
+    related: ["agent-identity", "agent-registry", "five-plane-architecture", "obo"] },
+  { id: "legacy-user-systems-plane", family: "auth", name: "Legacy / User-based Systems plane",
+    oneLine: "Secondary auth for Agent Users using SAML or user-account-based mechanisms — backward-compat for apps that only know how to auth a user.",
+    definition: "Many existing M365 + line-of-business apps were built before agent identities existed. They only know how to authenticate <em>users</em>, not service principals. When an AI Teammate agent needs to call such an app, the auth flows through the agent's <strong>Agent User</strong> object — via SAML, OIDC, or whatever user-auth mechanism the app supports. Provides backward-compat without forcing every legacy app to be rebuilt for agent identities.",
+    references: ["Agent 365 conc.pptx slide 1"],
+    related: ["agentic-user-identity", "authentication-systems-plane", "five-plane-architecture"] },
+  { id: "five-creation-paths", family: "lifecycle", name: "Five creation paths",
+    oneLine: "The five ways an agent enters an A365 tenant — four auto-register (Microsoft platforms), one manual-register (external), one unregistered (shadow).",
+    definition: "Per the deck, every agent in the tenant arrives via one of five paths: <strong>Copilot Studio</strong> (low-code, auto-register), <strong>M365 Agent Builder</strong> (declarative agents in Copilot, auto-register), <strong>Azure AI Foundry</strong> (pro-code, auto-register), <strong>A365 SDK</strong> (any cloud — Azure / AWS / GCP, auto-register), <strong>External platforms</strong> (SAP / ServiceNow / Slack, manual-register via Graph API). Anything outside these five is a <strong>Shadow Agent</strong> — invisible to A365. Governance plans must cover all five plus a shadow-detection story.",
+    references: ["Agent 365 conc.pptx slide 2"],
+    related: ["auto-register-category", "manual-register-category", "shadow-agent", "agent-registry"] },
+  { id: "auto-register-category", family: "lifecycle", name: "Auto-register category",
+    oneLine: "Creation paths where A365 registration happens automatically — no separate <code>a365 setup</code> step required.",
+    definition: "Copilot Studio, M365 Agent Builder, Azure AI Foundry, and the A365 SDK all auto-register agents with A365 as part of their normal creation flow. The agent appears in the registry without anyone running explicit setup CLI. Convenient for low-code teams; the trade-off is that governance teams need to discover these agents via the registry rather than via a deliberate registration ceremony.",
+    references: ["Agent 365 conc.pptx slide 2"],
+    related: ["five-creation-paths", "manual-register-category", "agent-registry"] },
+  { id: "manual-register-category", family: "lifecycle", name: "Manual-register category",
+    oneLine: "External-platform agents (SAP, ServiceNow, Slack) registered into A365 via Microsoft Graph API.",
+    definition: "Agents built on non-Microsoft platforms can still be brought into A365's governance perimeter by registering them via Microsoft Graph API. This adds them to the agent registry — they become visible to the admin centre, can be policy-targeted by Conditional Access, and audit-trail through Defender for Cloud Apps. They don't get auto-issued credentials the way auto-register agents do; the platform owner brings their own identity material.",
+    references: ["Agent 365 conc.pptx slide 2"],
+    related: ["five-creation-paths", "auto-register-category", "agent-registry"] },
+  { id: "five-plane-architecture", family: "surface", name: "Five-plane reference architecture",
+    oneLine: "The mental model: Where agents are built → Identity (Entra) → Management (A365) → Interoperability → Security.",
+    definition: "The whole A365 stack on one diagram. Five vertical planes: (1) <strong>Where agents are built</strong> — Copilot Studio / Agent Builder / Foundry / A365 SDK / External; (2) <strong>Identity plane</strong> (Entra) — Blueprints, Blueprint Principals, Agent Identities, Agent Users, ID Governance; (3) <strong>Management plane</strong> (A365) — Agent Registry, Collections, Admin Center, Agent Map; (4) <strong>Interoperability plane</strong> — Observability (OTel), MCP Servers, A2A Protocol, Notifications, Work IQ; (5) <strong>Security plane</strong> — GSA, Conditional Access, Defender, Purview, Sentinel. Use this when explaining A365 architecture to stakeholders who need the whole picture in one slide.",
+    references: ["Agent 365 conc.pptx slide 4"],
+    related: ["blueprint", "agent-registry", "authentication-systems-plane", "agent365-exporter"] },
+  { id: "defender-for-cloud", family: "observability", name: "Defender for Cloud (posture for Foundry agents)",
+    oneLine: "Static posture / configuration security for Foundry-hosted agents. Distinct from Defender for Cloud Apps (runtime).",
+    definition: "Microsoft Defender for Cloud — the Azure infra security product — covers Foundry-hosted agents specifically. Surface area: configuration drift, exposed endpoints, missing credential rotation, IAM mis-binding. Distinct from <strong>Defender for Cloud Apps</strong>, which is runtime inspection at the network/app layer. Both are usually needed: DfC for posture, DfCA for runtime.",
+    references: ["Agent 365 conc.pptx slide 3"],
+    related: ["cloud-app-events", "five-plane-architecture"] },
+  { id: "security-exposure-management", family: "observability", name: "Security Exposure Management",
+    oneLine: "Attack-path graph + blast-radius modelling specifically for agent-compromise scenarios.",
+    definition: "Microsoft Security Exposure Management generates an attack-path graph showing how a compromised agent could escalate from initial foothold to critical data assets. Surfaces the blast radius: if an agent is taken over, what data does it have permissions to reach, and which other systems can it pivot to? Feeds into Sentinel Graph for the actual visualisation. Most useful before an incident — it tells you which agents have an over-broad blast radius and should have their permissions trimmed.",
+    references: ["Agent 365 conc.pptx slide 3"],
+    related: ["cloud-app-events", "audit-log-row", "agent-collections"] },
+  { id: "graph-agents-endpoint", family: "lifecycle", name: "Graph /agents endpoint",
+    oneLine: "Microsoft Graph API surface for registering external-platform agents into the A365 Agent Registry.",
+    definition: "<code>POST https://graph.microsoft.com/v1.0/agents</code> registers a new agent into the A365 registry with metadata (display name, capabilities, agent card manifest), owner, sponsor, and initial collection placement. The mechanism by which agents built outside Microsoft's auto-register paths (SAP Joule, ServiceNow Now Assist, Slack workflow bots, AWS Bedrock agents) enter A365 governance. Requires admin consent on the calling app for <code>Agents.ReadWrite.All</code>. <strong>Verify the exact schema and endpoint against <a href='https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/publish-agents-to-registry' target='_blank'>Microsoft Learn</a></strong> — this endpoint is evolving.",
+    references: ["Agent 365 conc.pptx slide 2", "https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/publish-agents-to-registry"],
+    related: ["manual-register-category", "agent-registry", "agent-card-manifest", "agent-odata-type"] },
+  { id: "external-obs-contract", family: "observability", name: "External-agent observability contract",
+    oneLine: "The OTLP + structured-scope + scope-token contract an external agent must implement to surface in the A365 Activity tab.",
+    definition: "External agents that want their activity to appear in the M365 Admin Centre Activity tab (Path 2 of the registry-or-full-integration choice) must implement: (1) OpenTelemetry tracing wrapped in the A365 SDK's <strong>structured scopes</strong> (<code>InvokeAgentScope</code> → <code>InferenceScope</code> → <code>OutputScope</code>, with <code>ExecuteToolScope</code> for tool calls); (2) span attribute <code>gen_ai.operation.name</code> set to one of <code>{chat, invoke_agent, execute_tool, output_messages}</code> — others get rejected; (3) bearer token scoped to <code>Agent365.Observability.OtelWrite</code> (acquired via S2S <code>client_credentials</code> or OBO depending on auth mode); (4) POST to <code>https://agent365.svc.cloud.microsoft/observability/tenants/{tenant_id}/otlp/agents/{agent_id}/traces</code>. The A365 SDK (Python / .NET / JS) handles all of this automatically; native implementations can use plain OTLP HTTP.",
+    references: ["LESSONS_LEARNED.md §12-§16", "Agent 365 conc.pptx slide 2"],
+    related: ["agent365-exporter", "otelwrite-scope", "structured-scope", "gen-ai-operation-name", "manual-register-category"] },
+];
+
+const classes = [
+  { id: "ai-teammate-m365", name: "AI Teammate (M365)",
+    flags: "--m365 --aiteammate true",
+    gaStatus: "frontier", gaLabel: "Frontier preview",
+    tagline: "Most capable. Agent gets its own Entra agentic-user identity with mailbox, Teams presence, OneDrive, calendar. Surfaces in M365 Copilot Agents tab.",
+    tags: [
+      { cat: "Consent", label: "Admin consent", cls: "t-consent-admin" },
+      { cat: "Identity", label: "SP + Agent User", cls: "t-id-user" },
+      { cat: "Auth", label: "OBO + S2S", cls: "t-auth-both" },
+      { cat: "Trigger", label: "User or autonomous", cls: "t-trigger-either" },
+      { cat: "Audit", label: "User or agent", cls: "t-audit-mixed" },
+      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Surface", label: "M365 Copilot", cls: "t-surface-copilot" },
+      { cat: "Licensing", label: "Per-agent M365 license", cls: "t-license-yes" },
+    ],
+    pros: ["Most complete governance story; full Purview/Defender coverage", "Can operate autonomously with its own identity", "Users interact with it like a real team member", "Supports manager hierarchy in Entra"],
+    cons: ["Still Frontier preview (not GA) as of May 2026", "Highest setup complexity", "Admin consent required", "Licensing implications (mailbox/OneDrive license)"],
+    whenToPick: "Agent should appear as a standalone team member in M365 Copilot; needs a user-like identity for OBO flows or for sending mail/calendar invites as itself.",
+    prereqs: "Global Administrator. M365 license for the agent's user account.",
+    learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity",
+  },
+  { id: "ai-teammate-non-m365", name: "AI Teammate (non-M365)",
+    flags: "--aiteammate true (no --m365)",
+    gaStatus: "frontier", gaLabel: "Frontier preview",
+    tagline: "Same identity model as AI Teammate (M365), but endpoint via Teams Developer Portal — agent lives only in Teams channels, not the M365 Copilot Agents tab.",
+    tags: [
+      { cat: "Consent", label: "Admin consent", cls: "t-consent-admin" },
+      { cat: "Identity", label: "SP + Agent User", cls: "t-id-user" },
+      { cat: "Auth", label: "OBO + S2S", cls: "t-auth-both" },
+      { cat: "Trigger", label: "User or autonomous", cls: "t-trigger-either" },
+      { cat: "Audit", label: "User or agent", cls: "t-audit-mixed" },
+      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Surface", label: "Teams channels only", cls: "t-surface-teams" },
+      { cat: "Licensing", label: "Per-agent M365 license", cls: "t-license-yes" },
+    ],
+    pros: ["Same governance and identity depth as AI Teammate (M365)", "Avoids M365 Copilot surface if you want Teams-only distribution", "Simpler endpoint config for Teams-first deployments"],
+    cons: ["Still Frontier preview", "Not discoverable from M365 Copilot", "Same licensing overhead as M365 variant"],
+    whenToPick: "Teams-channel-only agent; you want the AI Teammate identity model without surfacing in M365 Copilot's Agents tab.",
+    prereqs: "Global Administrator. Teams Developer Portal access for endpoint config.",
+    learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity",
+  },
+  { id: "blueprint-only-obo", name: "Blueprint-only with OBO (M365) — CLI DEFAULT",
+    flags: "--m365 (no --aiteammate, no --authmode)",
+    gaStatus: "ga", gaLabel: "GA — 1 May 2026",
+    tagline: "The default and the safe bet. Service principal only (no Entra user). Delegated permissions; no admin consent needed for OBO scopes. Right for most server-side agents that act on behalf of a calling user.",
+    tags: [
+      { cat: "Consent", label: "User consent (no admin)", cls: "t-consent-user" },
+      { cat: "Identity", label: "SP only", cls: "t-id-sp" },
+      { cat: "Auth", label: "OBO (delegated)", cls: "t-auth-obo" },
+      { cat: "Trigger", label: "User-driven", cls: "t-trigger-user" },
+      { cat: "Audit", label: "User-attributed", cls: "t-audit-user" },
+      { cat: "Admin role", label: "Agent ID Developer", cls: "t-role-dev" },
+      { cat: "Surface", label: "Server-side", cls: "t-surface-server" },
+      { cat: "Licensing", label: "Covered by user M365 license", cls: "t-license-no" },
+    ],
+    pros: ["GA, production-safe today", "Simplest setup; CLI default", "Per-user licensing covers all OBO activity", "Compliance-friendly: audit trail tied to a specific human", "No admin consent for delegated scopes"],
+    cons: ["Agent capped by calling user's permissions", "Cannot run autonomously / scheduled / headless", "No own mailbox or directory presence", "Reactive only — no proactive messages"],
+    whenToPick: "Most server-to-server agents that act on behalf of a calling user. MCS agents, Foundry agents, API-first agents.",
+    prereqs: "Agent ID Developer for blueprint. No admin consent needed for OBO scopes.",
+    learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/setup",
+  },
+  { id: "blueprint-only-s2s", name: "Blueprint-only with S2S (M365)",
+    flags: "--m365 --authmode s2s",
+    gaStatus: "infra-ga", gaLabel: "Infra GA",
+    tagline: "Blueprint + service principal with app permissions on the agent identity. No user in the loop. Agent authenticates as itself. Admin consent required.",
+    tags: [
+      { cat: "Consent", label: "Admin consent (mandatory)", cls: "t-consent-admin" },
+      { cat: "Identity", label: "SP only", cls: "t-id-sp" },
+      { cat: "Auth", label: "S2S (app permissions)", cls: "t-auth-s2s" },
+      { cat: "Trigger", label: "Autonomous", cls: "t-trigger-auto" },
+      { cat: "Audit", label: "Agent-attributed", cls: "t-audit-agent" },
+      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Surface", label: "Server-side", cls: "t-surface-server" },
+      { cat: "Licensing", label: "Standalone SP licensing", cls: "t-licensing" },
+    ],
+    pros: ["Enables fully autonomous, non-interactive workloads", "No user session needed; runs 24/7", "Well-understood pattern for background automation"],
+    cons: ["Admin consent required for every scope", "App permissions broader than delegated — harder to scope narrowly", "No user context", "Risk of over-permissioned agents"],
+    whenToPick: "Scheduled jobs, monitoring agents, batch processing, any non-user-initiated automation calling M365 resources. Pro-code agents called from Databricks jobs / queues / cron.",
+    prereqs: "Global Administrator (mandatory — every app permission needs tenant-wide admin consent).",
+    learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/setup#setup-all",
+  },
+  { id: "blueprint-only-both", name: "Blueprint-only with Both Grants (M365)",
+    flags: "--m365 --authmode both",
+    gaStatus: "infra-ga", gaLabel: "Infra GA",
+    tagline: "Both delegated (OBO) and app (S2S) permissions configured. Maximum flexibility; highest blast radius. Microsoft says 'pick deliberately'.",
+    tags: [
+      { cat: "Consent", label: "Admin consent (mandatory)", cls: "t-consent-admin" },
+      { cat: "Identity", label: "SP only", cls: "t-id-sp" },
+      { cat: "Auth", label: "OBO + S2S", cls: "t-auth-both" },
+      { cat: "Trigger", label: "Either", cls: "t-trigger-either" },
+      { cat: "Audit", label: "Mixed (user/agent)", cls: "t-audit-mixed" },
+      { cat: "Admin role", label: "Global Admin", cls: "t-role-ga" },
+      { cat: "Surface", label: "Server-side", cls: "t-surface-server" },
+      { cat: "Licensing", label: "Standalone SP licensing", cls: "t-licensing" },
+    ],
+    pros: ["One agent handles both interactive and background scenarios", "Avoids two separate agents for related workflows", "Single blueprint, single governance surface"],
+    cons: ["Most complex permission surface to review", "Admin consent required even for OBO portions when combined with S2S", "Higher blast radius", "Rarely actually necessary"],
+    whenToPick: "One agent legitimately needs to both respond to user requests and run autonomous background jobs, and splitting into two is impractical. Genuinely rare.",
+    prereqs: "Global Administrator.",
+    learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/setup#setup-all",
+  },
+  { id: "non-dw", name: "Blueprint-based Non-DW Agent",
+    flags: "--m365 --aiteammate false --use-blueprint",
+    gaStatus: "tbc", gaLabel: "Internal — TBC",
+    tagline: "Variant of Blueprint-only that explicitly signals 'not a digital worker'. Internal Microsoft pattern; status TBC.",
+    tags: [
+      { cat: "Consent", label: "Admin consent (likely)", cls: "t-consent-admin" },
+      { cat: "Identity", label: "SP only", cls: "t-id-sp" },
+      { cat: "Auth", label: "OBO (typical)", cls: "t-auth-obo" },
+      { cat: "Trigger", label: "Either", cls: "t-trigger-either" },
+      { cat: "Audit", label: "Agent-attributed", cls: "t-audit-agent" },
+      { cat: "Admin role", label: "Agent ID Developer + A365 team approval", cls: "t-role-ga" },
+      { cat: "Surface", label: "Internal Microsoft", cls: "t-internal" },
+      { cat: "Use", label: "Not for general production", cls: "t-internal" },
+    ],
+    pros: ["Fits the standard blueprint + governance model", "Full observability and registry coverage"],
+    cons: ["Described in Microsoft's own docs as a 'specific Microsoft-internal pattern'", "Behaviour and routing implications not fully publicly documented", "Microsoft explicitly advises confirming with the A365 team before choosing this"],
+    whenToPick: "Don't, unless the A365 product team has explicitly directed you to it for a specific scenario.",
+    prereqs: "Agent ID Developer + explicit guidance from the A365 product team.",
+    learnUrl: "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/a365-dev-lifecycle",
+  },
+];
+
+const decisionTree = {
+  q1: { question: "Does the agent need to appear as a 'team member' in M365 Copilot, or have its own mailbox/identity?",
+        options: [
+          { label: "Yes — own identity required", next: "q2" },
+          { label: "No — just an SP is fine", next: "q3" },
+        ] },
+  q2: { question: "Should it surface in the M365 Copilot Agents tab (vs Teams-channel only)?",
+        options: [
+          { label: "Yes — M365 Copilot surface", outcome: { classId: "ai-teammate-m365", warn: "Note: still Frontier preview, not GA — pick this for trials, not customer prod." } },
+          { label: "No — Teams channels only", outcome: { classId: "ai-teammate-non-m365", warn: "Note: still Frontier preview, not GA." } },
+        ] },
+  q3: { question: "Is the agent triggered by user actions (chat turns, Copilot invocations) — i.e. there's always a calling user?",
+        options: [
+          { label: "Yes — user invokes it", outcome: { classId: "blueprint-only-obo", ok: "GA as of 1 May 2026, CLI default, no admin consent needed. The safe bet for most agents." } },
+          { label: "No — runs autonomously", next: "q4" },
+          { label: "Both — sometimes user-driven, sometimes autonomous", next: "q5" },
+        ] },
+  q4: { question: "Is the agent always autonomous (cron, queue, Databricks job, scheduled task), with no user context?",
+        options: [
+          { label: "Yes — fully autonomous", outcome: { classId: "blueprint-only-s2s", ok: "Infra-GA. Admin consent required for every scope. Right for pro-code background agents." } },
+          { label: "Actually it might need user context sometimes", next: "q5" },
+        ] },
+  q5: { question: "Did Microsoft's A365 product team specifically tell you to use the 'non-DW' variant?",
+        options: [
+          { label: "Yes — they directed me to this class", outcome: { classId: "non-dw", warn: "Confirm scope and behaviour with the A365 team before deploying." } },
+          { label: "No / not sure", outcome: { classId: "blueprint-only-both", warn: "Microsoft docs say 'pick deliberately'. Usually two separate agents (one OBO, one S2S) is cleaner than one Both agent. Reconsider unless you genuinely need a unified surface." } },
+        ] },
+};
+
+const animations = {
+  obo: {
+    actors: [
+      { id: "user", label: "User (Teams / Copilot)", x: 60, y: 170 },
+      { id: "agent", label: "Agent service", x: 320, y: 170 },
+      { id: "entra", label: "Entra ID", x: 580, y: 60 },
+      { id: "obs", label: "A365 Observability", x: 840, y: 170 },
+      { id: "graph", label: "M365 Graph", x: 580, y: 280 },
+    ],
+    steps: [
+      { from: "user", to: "agent", token: "user JWT", desc: "User triggers a turn in Teams; Bot Framework activity carries the user's delegated JWT to the agent's <code>/api/messages</code>." },
+      { from: "agent", to: "entra", token: "OBO request", desc: "Agent service exchanges the inbound user JWT for an OBO-scoped token via the <code>on_behalf_of</code> grant. Scope: <code>Agent365.Observability.OtelWrite</code>." },
+      { from: "entra", to: "agent", token: "OtelWrite token", desc: "Entra returns a delegated bearer token scoped to the agentic-user identity (not the SP)." },
+      { from: "agent", to: "obs", token: "OTel span", desc: "Agent posts a structured-scope span (InvokeAgentScope → InferenceScope → OutputScope) to A365 Observability ingest, using the OBO token. Attribution: the calling user." },
+      { from: "agent", to: "graph", token: "Graph (OBO)", desc: "Agent calls Microsoft Graph on behalf of the user — e.g. reads the user's mailbox. Constrained to whatever the user can see." },
+      { from: "graph", to: "agent", token: "Graph response", desc: "Graph returns data scoped to the user's permissions. No app-permission elevation." },
+      { from: "agent", to: "user", token: "reply", desc: "Agent emits the turn reply via Bot Framework. Turn complete. Audit row: 'user X did Y via the agent'." },
+    ],
+  },
+  s2s: {
+    actors: [
+      { id: "trigger", label: "Trigger (cron / Databricks / queue)", x: 60, y: 170 },
+      { id: "agent", label: "Agent service", x: 350, y: 170 },
+      { id: "entra", label: "Entra ID", x: 620, y: 60 },
+      { id: "obs", label: "A365 Observability", x: 880, y: 170 },
+      { id: "graph", label: "M365 Graph", x: 620, y: 280 },
+    ],
+    steps: [
+      { from: "trigger", to: "agent", token: "trigger event", desc: "External trigger fires (scheduled task, queue message, Databricks job). No inbound user JWT — just a payload. The agent service treats this as its own invocation." },
+      { from: "agent", to: "entra", token: "client_credentials", desc: "Agent uses its own clientId + clientSecret to POST a <code>client_credentials</code> token request to Entra. Scope: <code>api://9b975845-.../.default</code> (Observability) or whichever resource it needs." },
+      { from: "entra", to: "agent", token: "S2S token", desc: "Entra returns a bearer token scoped to the agent identity (the SP, via app permissions). No user in the principal claim." },
+      { from: "agent", to: "obs", token: "OTel span", desc: "Agent posts structured-scope span; attribution is the agent identity, not a user. Audit row says 'the agent did Y autonomously'." },
+      { from: "agent", to: "graph", token: "Graph (S2S)", desc: "If needed, agent calls Microsoft Graph using its app permissions. Sees all data the app permissions allow — not capped by any user's scope. Done." },
+    ],
+  },
+};
+
+/* ============================================================
+   RENDERERS
+   ============================================================ */
+
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  Object.entries(props).forEach(([k, v]) => {
+    if (k === "class") node.className = v;
+    else if (k === "html") node.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
+    else if (k.startsWith("data-")) node.setAttribute(k, v);
+    else node[k] = v;
+  });
+  (Array.isArray(children) ? children : [children]).forEach(c => {
+    if (c == null) return;
+    node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  });
+  return node;
+}
+
+function renderClasses() {
+  const host = document.getElementById("class-grid");
+  host.innerHTML = "";
+  classes.forEach(c => {
+    const card = el("article", { class: "card class-card interactive", "data-class-id": c.id });
+    card.appendChild(el("div", { class: "class-card-header" }, [
+      el("h3", { class: "class-card-name" }, c.name),
+      el("span", { class: "badge " + c.gaStatus }, c.gaLabel),
+    ]));
+    card.appendChild(el("div", { class: "class-card-flags" }, c.flags));
+    card.appendChild(el("p", { class: "class-card-tagline" }, c.tagline));
+    if (c.tags && c.tags.length) {
+      const tagRow = el("div", { class: "class-card-tags" });
+      c.tags.forEach(t => {
+        tagRow.appendChild(el("span", { class: "class-tag " + t.cls, title: t.cat + ": " + t.label }, [
+          el("span", { class: "class-tag-label" }, t.cat + ":"),
+          el("span", {}, " " + t.label),
+        ]));
+      });
+      card.appendChild(tagRow);
+    }
+    const body = el("div", { class: "class-card-body" });
+    body.appendChild(el("h4", {}, "Pros"));
+    body.appendChild(el("ul", {}, c.pros.map(p => el("li", {}, p))));
+    body.appendChild(el("h4", {}, "Cons"));
+    body.appendChild(el("ul", {}, c.cons.map(p => el("li", {}, p))));
+    body.appendChild(el("h4", {}, "When to pick"));
+    body.appendChild(el("p", {}, c.whenToPick));
+    body.appendChild(el("h4", {}, "Prerequisites"));
+    body.appendChild(el("p", {}, c.prereqs));
+    body.appendChild(el("div", { class: "class-card-actions" }, [
+      el("a", { class: "button subtle", href: c.learnUrl, target: "_blank" }, "Microsoft Learn ↗"),
+      c.id === "blueprint-only-obo" || c.id === "blueprint-only-s2s"
+        ? el("button", { class: "button", onclick: () => jumpToAnimation(c.id === "blueprint-only-obo" ? "obo" : "s2s") }, "See token flow ▸")
+        : null,
+    ]));
+    card.appendChild(body);
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("a, button")) return;
+      card.classList.toggle("expanded");
+    });
+    host.appendChild(card);
+  });
+}
+
+function renderConcepts() {
+  const tabsHost = document.getElementById("concept-tabs");
+  const bodiesHost = document.getElementById("concept-bodies");
+  tabsHost.innerHTML = "";
+  bodiesHost.innerHTML = "";
+
+  // Compute family counts
+  const byFamily = {};
+  FAMILIES.forEach(f => byFamily[f.id] = []);
+  concepts.forEach(c => { if (byFamily[c.family]) byFamily[c.family].push(c); });
+
+  // Tabs
+  const allBtn = el("button", { class: "pivot-tab active", "data-family": "all" }, [
+    "All ",
+    el("span", { class: "tab-count" }, String(concepts.length)),
+  ]);
+  tabsHost.appendChild(allBtn);
+  FAMILIES.forEach(f => {
+    const btn = el("button", { class: "pivot-tab", "data-family": f.id }, [
+      f.label + " ",
+      el("span", { class: "tab-count" }, String(byFamily[f.id].length)),
+    ]);
+    tabsHost.appendChild(btn);
+  });
+  tabsHost.addEventListener("click", (e) => {
+    const tab = e.target.closest(".pivot-tab");
+    if (!tab) return;
+    tabsHost.querySelectorAll(".pivot-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    const fam = tab.dataset.family;
+    bodiesHost.querySelectorAll(".concept-grid").forEach(grid => {
+      grid.style.display = (fam === "all" || grid.dataset.family === fam) ? "" : "none";
+    });
+  });
+
+  // Bodies — one grid per family
+  FAMILIES.forEach(f => {
+    const grid = el("div", { class: "concept-grid", "data-family": f.id });
+    byFamily[f.id].forEach(c => grid.appendChild(renderConceptCard(c)));
+    bodiesHost.appendChild(grid);
+  });
+}
+
+function renderConceptCard(c) {
+  const card = el("article", { class: "card concept-card interactive", id: "c-" + c.id, "data-concept": c.id, "data-family": c.family });
+  card.appendChild(el("div", { class: "concept-card-name" }, [
+    el("span", { class: "badge family-" + c.family }, FAMILIES.find(f => f.id === c.family).label),
+    el("span", { html: c.name }),
+  ]));
+  card.appendChild(el("div", { class: "concept-card-oneline", html: c.oneLine }));
+  const body = el("div", { class: "concept-card-body" });
+  body.appendChild(el("div", { html: c.definition }));
+  if (c.related && c.related.length) {
+    const chipRow = el("div", { class: "concept-card-related" });
+    c.related.forEach(rid => {
+      const target = concepts.find(x => x.id === rid);
+      if (!target) return;
+      chipRow.appendChild(el("span", {
+        class: "related-chip",
+        onclick: (e) => { e.stopPropagation(); jumpToConcept(rid); },
+      }, "→ " + target.name));
+    });
+    body.appendChild(chipRow);
+  }
+  if (c.references && c.references.length) {
+    body.appendChild(el("div", { class: "concept-card-citation" }, "Cited in: " + c.references.join(" · ")));
+  }
+  card.appendChild(body);
+  card.addEventListener("click", (e) => {
+    if (e.target.closest("a, button, .related-chip")) return;
+    card.classList.toggle("expanded");
+  });
+  return card;
+}
+
+function jumpToConcept(id) {
+  const card = document.getElementById("c-" + id);
+  if (!card) return;
+  // Make sure the right family tab is active
+  document.querySelector('[data-family="all"]').click();
+  card.classList.add("expanded");
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.classList.remove("pulse");
+  // restart animation
+  void card.offsetWidth;
+  card.classList.add("pulse");
+}
+
+function jumpToAnimation(mode) {
+  document.getElementById("animation").scrollIntoView({ behavior: "smooth" });
+  setAnimationMode(mode);
+}
+
+/* ============================================================
+   DECISION TREE
+   ============================================================ */
+
+const treeState = { current: "q1", history: [] };
+
+function renderDecisionTree() {
+  const host = document.getElementById("decision-tree-host");
+  host.innerHTML = "";
+
+  if (treeState.current.startsWith("q")) {
+    const q = decisionTree[treeState.current];
+    const progress = el("div", { class: "dt-progress" });
+    const totalQs = Object.keys(decisionTree).length;
+    for (let i = 0; i < totalQs; i++) {
+      const dot = el("div", { class: "dt-progress-dot" });
+      const qIndex = Object.keys(decisionTree).indexOf(treeState.current);
+      if (i < qIndex) dot.classList.add("answered");
+      if (i === qIndex) dot.classList.add("active");
+      progress.appendChild(dot);
+    }
+    host.appendChild(progress);
+    host.appendChild(el("div", { class: "dt-question" }, q.question));
+    const opts = el("div", { class: "dt-options" });
+    q.options.forEach(o => {
+      const btn = el("button", { class: "dt-option" }, o.label);
+      btn.addEventListener("click", () => {
+        treeState.history.push({ q: q.question, a: o.label });
+        if (o.outcome) {
+          treeState.current = "outcome:" + o.outcome.classId + (o.outcome.warn ? "|warn|" + o.outcome.warn : "|ok|" + (o.outcome.ok || ""));
+        } else {
+          treeState.current = o.next;
+        }
+        renderDecisionTree();
+      });
+      opts.appendChild(btn);
+    });
+    host.appendChild(opts);
+    if (treeState.history.length) {
+      const controls = el("div", { class: "dt-controls" });
+      const back = el("button", { class: "button" }, "← Back");
+      back.addEventListener("click", () => {
+        const last = treeState.history.pop();
+        treeState.current = Object.keys(decisionTree).find(k => decisionTree[k].question === last.q);
+        renderDecisionTree();
+      });
+      const restart = el("button", { class: "button subtle" }, "Restart");
+      restart.addEventListener("click", () => { treeState.history = []; treeState.current = "q1"; renderDecisionTree(); });
+      controls.appendChild(back);
+      controls.appendChild(restart);
+      host.appendChild(controls);
+    }
+  } else if (treeState.current.startsWith("outcome:")) {
+    const body = treeState.current.slice("outcome:".length);
+    const [classId, level, ...rest] = body.split("|");
+    const c = classes.find(x => x.id === classId);
+    const note = rest.join("|");
+    const result = el("div", { class: "dt-result " + (level === "warn" ? "warning" : "") });
+    result.appendChild(el("div", { class: "section-eyebrow" }, "Recommendation"));
+    result.appendChild(el("h3", {}, c.name));
+    result.appendChild(el("div", { class: "class-card-flags" }, c.flags));
+    result.appendChild(el("p", { html: c.tagline }));
+    if (note) result.appendChild(el("p", { html: "<strong>" + (level === "warn" ? "Caveat" : "Why this fits") + ":</strong> " + note }));
+    const actions = el("div", { class: "class-card-actions" }, [
+      el("button", { class: "button primary", onclick: () => { document.getElementById("classes").scrollIntoView({ behavior: "smooth" }); const card = document.querySelector('[data-class-id="' + classId + '"]'); if (card) { card.classList.add("expanded"); } } }, "See full class card ▸"),
+      el("button", { class: "button", onclick: () => { treeState.history = []; treeState.current = "q1"; renderDecisionTree(); } }, "Restart"),
+    ]);
+    result.appendChild(actions);
+    host.appendChild(result);
+    if (treeState.history.length) {
+      const hist = el("div", { class: "dt-history" }, [
+        el("strong", {}, "Your path:"),
+      ]);
+      treeState.history.forEach(h => {
+        hist.appendChild(el("div", { class: "dt-history-item" }, [
+          el("span", { class: "dt-history-q" }, h.q + " → "),
+          el("span", { class: "dt-history-a" }, h.a),
+        ]));
+      });
+      result.appendChild(hist);
+    }
+  }
+}
+
+/* ============================================================
+   COMPARATOR
+   ============================================================ */
+
+const comparatorRows = [
+  { label: "Token source",
+    obo: "Inbound user JWT (via OAuth2 <code>on_behalf_of</code> grant)",
+    s2s: "Agent's own clientId + secret (via <code>client_credentials</code> grant)" },
+  { label: "Consent model",
+    obo: "<span class='pill' style='background:var(--color-success-soft); color:var(--color-success);'>User consent</span> First-use per user",
+    s2s: "<span class='pill' style='background:var(--color-warning-soft); color:var(--color-warning);'>Admin consent</span> Tenant-wide, Global Admin required" },
+  { label: "Principal identity in tokens",
+    obo: "The calling user (agentic-user instance)",
+    s2s: "The agent service principal" },
+  { label: "Entra grants used",
+    obo: "<code>oauth2PermissionGrant</code> (delegated)",
+    s2s: "<code>appRoleAssignment</code> (app permission)" },
+  { label: "Admin consent required?",
+    obo: "No for OBO scopes (some grants still need it; the CLI prints the URL when so)",
+    s2s: "Yes for every scope" },
+  { label: "Audit attribution",
+    obo: "<em>User X did Y via the agent</em>",
+    s2s: "<em>The agent did Y autonomously</em>" },
+  { label: "Trigger pattern",
+    obo: "Teams turn / Copilot invocation / user-driven call",
+    s2s: "Cron / queue / Databricks job / webhook" },
+  { label: "Permissions scope ceiling",
+    obo: "Capped by the calling user's permissions",
+    s2s: "Whatever app permissions were granted (often broader than typical user)" },
+  { label: "Can the agent act with no user logged in?",
+    obo: "No — needs an inbound user token",
+    s2s: "Yes" },
+  { label: "Demo friction",
+    obo: "Low",
+    s2s: "Higher — admin consent, code change to token resolver" },
+  { label: "GA status (May 2026)",
+    obo: "<span class='badge ga'>GA</span> 1 May 2026",
+    s2s: "<span class='badge infra-ga'>Infra GA</span>" },
+];
+
+let comparatorMode = "obo";
+function renderComparator() {
+  const host = document.getElementById("comparator-rows");
+  host.innerHTML = "";
+  comparatorRows.forEach(r => {
+    if (comparatorMode === "both") {
+      host.appendChild(el("div", { class: "comparator-row mode-both diff-highlight" }, [
+        el("div", { class: "comparator-label" }, r.label),
+        el("div", { class: "comparator-value", html: "<strong>OBO:</strong> " + r.obo }),
+        el("div", { class: "comparator-value", html: "<strong>S2S:</strong> " + r.s2s }),
+      ]));
+    } else {
+      host.appendChild(el("div", { class: "comparator-row mode-single" }, [
+        el("div", { class: "comparator-label" }, r.label),
+        el("div", { class: "comparator-value", html: comparatorMode === "obo" ? r.obo : r.s2s }),
+      ]));
+    }
+  });
+}
+
+function setupComparator() {
+  document.getElementById("comparator-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn) return;
+    document.querySelectorAll("#comparator-toggle button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    comparatorMode = btn.dataset.mode;
+    renderComparator();
+  });
+}
+
+/* ============================================================
+   ANIMATION
+   ============================================================ */
+
+const animState = {
+  mode: "obo",
+  step: 0,         // -1 = before start, 0..steps.length-1 = on step i
+  progress: 0,     // 0..1 within current step
+  playing: false,
+  lastTick: 0,
+  stepDuration: 1400, // ms
+};
+
+function renderAnimationStage() {
+  const svg = document.getElementById("animation-svg");
+  svg.innerHTML = "";
+  const anim = animations[animState.mode];
+  const NS = "http://www.w3.org/2000/svg";
+
+  // Draw path lines between adjacent step actors
+  anim.steps.forEach((step, i) => {
+    const from = anim.actors.find(a => a.id === step.from);
+    const to = anim.actors.find(a => a.id === step.to);
+    const line = document.createElementNS(NS, "path");
+    line.setAttribute("class", "path-line" + (i === animState.step ? " active" : ""));
+    line.setAttribute("d", `M ${from.x + 90} ${from.y + 22} L ${to.x + 10} ${to.y + 22}`);
+    line.dataset.step = i;
+    svg.appendChild(line);
+  });
+
+  // Actor boxes
+  anim.actors.forEach(a => {
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "actor-group" + (isActorActive(a.id) ? " active" : ""));
+    g.dataset.actorId = a.id;
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("class", "actor-box");
+    rect.setAttribute("x", a.x);
+    rect.setAttribute("y", a.y);
+    rect.setAttribute("width", 180);
+    rect.setAttribute("height", 44);
+    g.appendChild(rect);
+    const text = document.createElementNS(NS, "text");
+    text.setAttribute("x", a.x + 90);
+    text.setAttribute("y", a.y + 28);
+    text.setAttribute("text-anchor", "middle");
+    text.textContent = a.label;
+    g.appendChild(text);
+    svg.appendChild(g);
+  });
+
+  // Active token (only when step active)
+  if (animState.step >= 0 && animState.step < anim.steps.length) {
+    const step = anim.steps[animState.step];
+    const from = anim.actors.find(a => a.id === step.from);
+    const to = anim.actors.find(a => a.id === step.to);
+    const sx = from.x + 90;
+    const sy = from.y + 22;
+    const ex = to.x + 10;
+    const ey = to.y + 22;
+    const tx = sx + (ex - sx) * animState.progress;
+    const ty = sy + (ey - sy) * animState.progress;
+    const tokenW = Math.max(60, step.token.length * 7 + 16);
+    const token = document.createElementNS(NS, "rect");
+    token.setAttribute("class", "token-capsule");
+    token.setAttribute("x", tx - tokenW / 2);
+    token.setAttribute("y", ty - 13);
+    token.setAttribute("width", tokenW);
+    token.setAttribute("height", 26);
+    svg.appendChild(token);
+    const tokenText = document.createElementNS(NS, "text");
+    tokenText.setAttribute("class", "token-text");
+    tokenText.setAttribute("x", tx);
+    tokenText.setAttribute("y", ty + 4);
+    tokenText.setAttribute("text-anchor", "middle");
+    tokenText.textContent = step.token;
+    svg.appendChild(tokenText);
+  }
+}
+
+function isActorActive(actorId) {
+  const anim = animations[animState.mode];
+  if (animState.step < 0 || animState.step >= anim.steps.length) return false;
+  const step = anim.steps[animState.step];
+  return step.from === actorId || step.to === actorId;
+}
+
+function renderAnimationStepInfo() {
+  const anim = animations[animState.mode];
+  const counter = document.getElementById("anim-step-counter");
+  const desc = document.getElementById("anim-step-desc");
+  if (animState.step < 0) {
+    counter.textContent = `Step 0 of ${anim.steps.length} — ready`;
+    desc.innerHTML = "Click <strong>Play</strong> to start the animation, or <strong>Step ▸</strong> to advance one step at a time.";
+  } else if (animState.step >= anim.steps.length) {
+    counter.textContent = `Step ${anim.steps.length} of ${anim.steps.length} — complete`;
+    desc.innerHTML = "Animation complete. Click <strong>Reset</strong> to replay, or switch to the other mode.";
+  } else {
+    const s = anim.steps[animState.step];
+    counter.textContent = `Step ${animState.step + 1} of ${anim.steps.length}`;
+    desc.innerHTML = s.desc;
+  }
+}
+
+function setAnimationMode(mode) {
+  animState.mode = mode;
+  animState.step = -1;
+  animState.progress = 0;
+  animState.playing = false;
+  document.querySelectorAll(".animation-tabs button").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  document.getElementById("anim-mode-label").textContent = "Mode: " + mode.toUpperCase();
+  renderAnimationStage();
+  renderAnimationStepInfo();
+}
+
+function animationTick(now) {
+  if (!animState.playing) return;
+  const anim = animations[animState.mode];
+  if (animState.step >= anim.steps.length) { animState.playing = false; return; }
+  if (animState.step < 0) animState.step = 0;
+  const elapsed = now - animState.lastTick;
+  animState.progress += elapsed / animState.stepDuration;
+  animState.lastTick = now;
+  if (animState.progress >= 1) {
+    animState.progress = 0;
+    animState.step += 1;
+    if (animState.step >= anim.steps.length) {
+      animState.playing = false;
+      renderAnimationStage();
+      renderAnimationStepInfo();
+      return;
+    }
+  }
+  renderAnimationStage();
+  renderAnimationStepInfo();
+  requestAnimationFrame(animationTick);
+}
+
+function setupAnimation() {
+  document.querySelectorAll(".animation-tabs button").forEach(b => {
+    b.addEventListener("click", () => setAnimationMode(b.dataset.mode));
+  });
+  document.getElementById("anim-play").addEventListener("click", () => {
+    if (animState.step >= animations[animState.mode].steps.length) {
+      animState.step = -1;
+      animState.progress = 0;
+    }
+    animState.playing = true;
+    animState.lastTick = performance.now();
+    requestAnimationFrame(animationTick);
+  });
+  document.getElementById("anim-pause").addEventListener("click", () => { animState.playing = false; });
+  document.getElementById("anim-step").addEventListener("click", () => {
+    animState.playing = false;
+    const anim = animations[animState.mode];
+    if (animState.step < anim.steps.length - 1) {
+      animState.step = Math.max(0, animState.step + 1);
+      animState.progress = 1;
+    } else {
+      animState.step = anim.steps.length;
+    }
+    renderAnimationStage();
+    renderAnimationStepInfo();
+  });
+  document.getElementById("anim-reset").addEventListener("click", () => {
+    animState.step = -1;
+    animState.progress = 0;
+    animState.playing = false;
+    renderAnimationStage();
+    renderAnimationStepInfo();
+  });
+}
+
+/* ============================================================
+   SEARCH
+   ============================================================ */
+
+function setupSearch() {
+  const input = document.getElementById("search");
+  const hits = document.getElementById("search-hits");
+  let timeout;
+  input.addEventListener("input", () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) {
+        document.querySelectorAll(".concept-card").forEach(c => c.classList.remove("hidden"));
+        hits.textContent = "";
+        // Reset family tab counts
+        document.querySelectorAll(".pivot-tab").forEach(t => {
+          const fam = t.dataset.family;
+          const count = fam === "all" ? concepts.length : concepts.filter(c => c.family === fam).length;
+          t.querySelector(".tab-count").textContent = count;
+        });
+        return;
+      }
+      const filtered = concepts.filter(c => {
+        const haystack = (c.name + " " + c.oneLine + " " + (c.definition || "")).toLowerCase();
+        return haystack.includes(q);
+      });
+      const ids = new Set(filtered.map(c => c.id));
+      document.querySelectorAll(".concept-card").forEach(card => {
+        card.classList.toggle("hidden", !ids.has(card.dataset.concept));
+      });
+      hits.textContent = `${filtered.length} hit${filtered.length === 1 ? "" : "s"}`;
+      // Update family tab counts to show filtered counts
+      document.querySelectorAll(".pivot-tab").forEach(t => {
+        const fam = t.dataset.family;
+        const count = fam === "all" ? filtered.length : filtered.filter(c => c.family === fam).length;
+        t.querySelector(".tab-count").textContent = count;
+      });
+      // Auto-jump to "All" tab so hits across families are visible
+      document.querySelector('[data-family="all"]').click();
+    }, 150);
+  });
+}
+
+/* ============================================================
+   AXIS GRID INTERACTIONS
+   ============================================================ */
+
+function setupAxisGrid() {
+  document.querySelectorAll(".axis-cell, [data-jump-class]").forEach(cell => {
+    cell.addEventListener("click", (e) => {
+      e.preventDefault();
+      const id = cell.dataset.classId || cell.getAttribute("data-jump-class");
+      document.getElementById("classes").scrollIntoView({ behavior: "smooth" });
+      setTimeout(() => {
+        const card = document.querySelector('.class-card[data-class-id="' + id + '"]');
+        if (card) card.classList.add("expanded");
+      }, 400);
+    });
+  });
+  // Identity-model node click-jumps to concept cards
+  document.querySelectorAll("[data-concept-jump]").forEach(node => {
+    const handler = (e) => {
+      e.preventDefault();
+      jumpToConcept(node.getAttribute("data-concept-jump"));
+    };
+    node.addEventListener("click", handler);
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handler(e); }
+    });
+  });
+}
+
+/* ============================================================
+   SCROLL-SPY SIDEBAR
+   ============================================================ */
+
+function setupScrollSpy() {
+  const links = document.querySelectorAll(".sidebar a[data-target]");
+  const sections = Array.from(links).map(l => document.getElementById(l.dataset.target)).filter(Boolean);
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        links.forEach(l => l.classList.toggle("active", l.dataset.target === entry.target.id));
+      }
+    });
+  }, { rootMargin: "-80px 0px -60% 0px", threshold: 0 });
+  sections.forEach(s => obs.observe(s));
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderClasses();
+  renderConcepts();
+  renderDecisionTree();
+  renderComparator();
+  setAnimationMode("obo");
+  setupComparator();
+  setupAnimation();
+  setupSearch();
+  setupAxisGrid();
+  setupScrollSpy();
+  // Init Mermaid if loaded
+  if (window.mermaid) {
+    try { window.mermaid.initialize({ startOnLoad: true, theme: "default" }); }
+    catch (e) { console.warn("Mermaid init failed:", e); }
+  }
+});
+</script>
+</body>
+</html>
