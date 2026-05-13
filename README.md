@@ -22,6 +22,8 @@
 | **`README.md` (this file)** | Project overview, install runbook, demo-day ops, observability deep-dive |
 | [`SETUP.md`](SETUP.md) | Fresh-tenant runbook from clone to working in Copilot |
 | [`RE-REGISTRATION.md`](RE-REGISTRATION.md) | Scenario-based runbook for changing an *already-registered* agent — endpoint swaps, manifest re-publish, full cleanup → re-setup |
+| [`docs/demo-reregister.md`](docs/demo-reregister.md) | Guide for the interactive CLI teaching script (`scripts/demo-reregister.sh`) — menu-driven demo of all 5 re-registration scenarios |
+| [`docs/a365-concepts.html`](docs/a365-concepts.html) | Interactive conceptual model — 85 concepts, decision tree, OBO vs S2S comparison, animated token flows |
 | [`LESSONS_LEARNED.md`](LESSONS_LEARNED.md) | Every error we hit + the fix. Read this first when something breaks |
 | [`.claude/skills/draft-dodger-setup/SKILL.md`](.claude/skills/draft-dodger-setup/SKILL.md) | Project-local Claude skill — interactive bootstrap. Invoke with `/draft-dodger-setup`. |
 | [`plans/phase-1-scaffold.md`](plans/phase-1-scaffold.md) | Phase 1 design notes (initial scaffold) |
